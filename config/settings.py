@@ -1,13 +1,16 @@
 import os
+import logging
 from dataclasses import dataclass
 from typing import Optional
+from modules.base_im_config import BaseIMConfig
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
-class TelegramConfig:
+class TelegramConfig(BaseIMConfig):
     bot_token: str
     target_chat_id: Optional[int] = None  # Target chat ID to send all messages
-    allowed_users: Optional[list[int]] = None  # Optional: Restrict who can use the bot
     
     @classmethod
     def from_env(cls) -> 'TelegramConfig':
@@ -16,14 +19,20 @@ class TelegramConfig:
             raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
         
         target_chat_id = None
-        target_chat_id_str = os.getenv("TARGET_CHAT_ID")
+        target_chat_id_str = os.getenv("TELEGRAM_TARGET_CHAT_ID")
         if target_chat_id_str:
             target_chat_id = int(target_chat_id_str)
         
-        allowed_users_str = os.getenv("ALLOWED_USERS", "")
-        allowed_users = [int(uid) for uid in allowed_users_str.split(",") if uid] if allowed_users_str else None
-        
-        return cls(bot_token=bot_token, target_chat_id=target_chat_id, allowed_users=allowed_users)
+        return cls(bot_token=bot_token, target_chat_id=target_chat_id)
+    
+    def validate(self) -> bool:
+        """Validate Telegram configuration"""
+        if not self.bot_token:
+            raise ValueError("TELEGRAM_BOT_TOKEN is required")
+        if not self.bot_token.startswith(('bot', 'xox')):
+            # Basic token format check
+            logger.warning("Telegram bot token format might be invalid")
+        return True
 
 
 @dataclass
@@ -44,15 +53,63 @@ class ClaudeConfig:
 
 
 @dataclass
+class SlackConfig(BaseIMConfig):
+    bot_token: str
+    app_token: Optional[str] = None  # For Socket Mode
+    signing_secret: Optional[str] = None  # For webhook mode
+    target_channel: Optional[str] = None  # Default channel for outputs
+    
+    @classmethod
+    def from_env(cls) -> 'SlackConfig':
+        bot_token = os.getenv("SLACK_BOT_TOKEN")
+        if not bot_token:
+            raise ValueError("SLACK_BOT_TOKEN environment variable is required")
+        
+        return cls(
+            bot_token=bot_token,
+            app_token=os.getenv("SLACK_APP_TOKEN"),
+            signing_secret=os.getenv("SLACK_SIGNING_SECRET"),
+            target_channel=os.getenv("SLACK_TARGET_CHANNEL")
+        )
+    
+    def validate(self) -> bool:
+        """Validate Slack configuration"""
+        if not self.bot_token:
+            raise ValueError("SLACK_BOT_TOKEN is required")
+        if not self.bot_token.startswith('xoxb-'):
+            raise ValueError("Invalid Slack bot token format (should start with xoxb-)")
+        if self.app_token and not self.app_token.startswith('xapp-'):
+            raise ValueError("Invalid Slack app token format (should start with xapp-)")
+        return True
+
+
+@dataclass
 class AppConfig:
-    telegram: TelegramConfig
-    claude: ClaudeConfig
+    platform: str  # 'telegram' or 'slack'
+    telegram: Optional[TelegramConfig] = None
+    slack: Optional[SlackConfig] = None
+    claude: ClaudeConfig = None
     log_level: str = "INFO"
     
     @classmethod
     def from_env(cls) -> 'AppConfig':
-        return cls(
-            telegram=TelegramConfig.from_env(),
+        platform = os.getenv("IM_PLATFORM", "telegram").lower()
+        
+        if platform not in ["telegram", "slack"]:
+            raise ValueError(f"Invalid IM_PLATFORM: {platform}. Must be 'telegram' or 'slack'")
+        
+        config = cls(
+            platform=platform,
             claude=ClaudeConfig.from_env(),
             log_level=os.getenv("LOG_LEVEL", "INFO")
         )
+        
+        # Load platform-specific config
+        if platform == "telegram":
+            config.telegram = TelegramConfig.from_env()
+            config.telegram.validate()
+        elif platform == "slack":
+            config.slack = SlackConfig.from_env()
+            config.slack.validate()
+        
+        return config

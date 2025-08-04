@@ -1,242 +1,104 @@
 import asyncio
 import logging
-from typing import Callable, Optional
-from telegram import Update, Bot, InlineKeyboardMarkup
+from typing import Callable, Optional, Dict, Any
+from telegram import Update, Bot, InlineKeyboardMarkup as TGInlineKeyboardMarkup, InlineKeyboardButton as TGInlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.helpers import escape_markdown
 from telegram.error import TelegramError
-from config import TelegramConfig
+from config.settings import TelegramConfig
+from .base_im_client import BaseIMClient, MessageContext, InlineKeyboard, InlineButton
 
 
 logger = logging.getLogger(__name__)
 
 
-class TelegramBot:
+class TelegramBot(BaseIMClient):
     def __init__(self, config: TelegramConfig):
-        self.config = config
+        super().__init__(config)
         self.application = Application.builder().token(config.bot_token).build()
-        self.message_callback: Optional[Callable] = None
-        self.execute_callback: Optional[Callable] = None
-        self.status_callback: Optional[Callable] = None
-        self.clear_callback: Optional[Callable] = None
-        self.cwd_callback: Optional[Callable] = None
-        self.set_cwd_callback: Optional[Callable] = None
-        self.queue_callback: Optional[Callable] = None
-        self.settings_callback: Optional[Callable] = None
-        self.callback_query_handler: Optional[Callable] = None
         
-    def check_permission(self, user_id: int) -> bool:
-        """Check if user is allowed to use the bot"""
-        if not self.config.allowed_users:
-            return True
-        return user_id in self.config.allowed_users
-    
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /start command"""
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id
+        # Store callback queries for answering
+        self._callback_queries: Dict[str, Any] = {}
         
-        if not self.check_permission(user_id):
-            await update.message.reply_text("Sorry, you are not authorized to use this bot.")
-            return
-            
-        message_text = f"""Welcome to Claude Code Remote Control Bot!
-
-Your Chat ID: {chat_id}
-
-Commands:
-/start - Show this message and IDs  
-/execute - Manually start processing queue
-/clear - Clear message queue
-/status - Show current status
-/queue - Show messages in queue
-/cwd - Show current working directory
-/set_cwd <path> - Set working directory
-/settings - Personalization settings
-
-How it works:
-• Send any message to add it to the queue
-• Messages are automatically processed in order
-• Claude Code executes each message sequentially"""
-
-        # Use official escape function for the entire message
-        escaped_message = escape_markdown(message_text, version=2)
+    async def handle_telegram_message(self, update: Update, tg_context: ContextTypes.DEFAULT_TYPE):
+        """Handle incoming text messages from Telegram"""
+        # Create MessageContext
+        context = MessageContext(
+            user_id=str(update.effective_user.id),
+            channel_id=str(update.effective_chat.id),
+            message_id=str(update.message.message_id),
+            platform_specific={'update': update, 'tg_context': tg_context}
+        )
         
-        await update.message.reply_text(escaped_message, parse_mode='MarkdownV2')
-    
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle incoming text messages"""
-        if not self.check_permission(update.effective_user.id):
-            return
-            
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id
         message_text = update.message.text
         
-        if self.message_callback:
-            response = await self.message_callback(chat_id, user_id, message_text)
-            if response:
-                await update.message.reply_text(response)
+        # Check if it's a command
+        if message_text.startswith('/'):
+            parts = message_text.split(maxsplit=1)
+            command = parts[0][1:]  # Remove the /
+            args = parts[1] if len(parts) > 1 else ""
+            
+            if command in self.on_command_callbacks:
+                await self.on_command_callbacks[command](context, args)
+        elif self.on_message_callback:
+            await self.on_message_callback(context, message_text)
     
-    async def execute_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /execute command"""
-        if not self.check_permission(update.effective_user.id):
+    async def handle_telegram_callback(self, update: Update, tg_context: ContextTypes.DEFAULT_TYPE):
+        """Handle callback queries from inline keyboards"""
+        query = update.callback_query
+        
+        # Store the query for later use in answer_callback
+        self._callback_queries[query.id] = query
+        
+        # Create MessageContext
+        context = MessageContext(
+            user_id=str(query.from_user.id),
+            channel_id=str(query.message.chat_id),
+            message_id=str(query.message.message_id),
+            platform_specific={'query': query, 'update': update, 'tg_context': tg_context, 'callback_id': query.id}
+        )
+        
+        if self.on_callback_query_callback:
+            await self.on_callback_query_callback(context, query.data)
+    
+    async def _wrap_command(self, command_name: str, update: Update, tg_context: ContextTypes.DEFAULT_TYPE):
+        """Wrap a command handler to convert Update to MessageContext"""
+        if command_name not in self.on_command_callbacks:
             return
             
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id
-        
-        if self.execute_callback:
-            await self.execute_callback(chat_id, user_id)
-    
-    async def clear_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /clear command"""
-        if not self.check_permission(update.effective_user.id):
-            return
-            
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id
-        
-        if self.clear_callback:
-            response = await self.clear_callback(chat_id, user_id)
-            if response:
-                await update.message.reply_text(response)
-    
-    async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /status command"""
-        if not self.check_permission(update.effective_user.id):
-            return
-            
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id
-        
-        if self.status_callback:
-            response = await self.status_callback(chat_id, user_id)
-            if response:
-                await update.message.reply_text(response)
-    
-    async def cwd_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /cwd command"""
-        if not self.check_permission(update.effective_user.id):
-            return
-            
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id
-        
-        if self.cwd_callback:
-            response = await self.cwd_callback(chat_id, user_id)
-            if response:
-                await update.message.reply_text(response, parse_mode='MarkdownV2')
-    
-    async def set_cwd_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /set_cwd command"""
-        if not self.check_permission(update.effective_user.id):
-            return
-            
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id
-        
-        # Extract path from command
+        # Extract args
         message_text = update.message.text
         parts = message_text.split(maxsplit=1)
+        args = parts[1] if len(parts) > 1 else ""
         
-        if len(parts) < 2:
-            await update.message.reply_text("Usage: /set_cwd <path>")
-            return
+        # Create MessageContext
+        context = MessageContext(
+            user_id=str(update.effective_user.id),
+            channel_id=str(update.effective_chat.id),
+            message_id=str(update.message.message_id),
+            platform_specific={'update': update, 'tg_context': tg_context}
+        )
         
-        new_path = parts[1].strip()
-        
-        if self.set_cwd_callback:
-            response = await self.set_cwd_callback(chat_id, user_id, new_path)
-            if response:
-                await update.message.reply_text(response, parse_mode='MarkdownV2')
-    
-    async def queue_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /queue command"""
-        if not self.check_permission(update.effective_user.id):
-            return
-            
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id
-        
-        if self.queue_callback:
-            response = await self.queue_callback(chat_id, user_id)
-            if response:
-                await update.message.reply_text(response)
-    
-    async def settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /settings command"""
-        if not self.check_permission(update.effective_user.id):
-            return
-            
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id
-        
-        if self.settings_callback:
-            await self.settings_callback(chat_id, user_id)
-    
-    async def handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle callback queries from inline keyboards"""
-        if self.callback_query_handler:
-            await self.callback_query_handler(update.callback_query)
-    
-    def register_callbacks(self, 
-                         on_message: Callable = None,
-                         on_execute: Callable = None,
-                         on_status: Callable = None,
-                         on_clear: Callable = None,
-                         on_cwd: Callable = None,
-                         on_set_cwd: Callable = None,
-                         on_queue: Callable = None,
-                         on_settings: Callable = None,
-                         on_callback_query: Callable = None):
-        """Register callback functions"""
-        self.message_callback = on_message
-        self.execute_callback = on_execute
-        self.status_callback = on_status
-        self.clear_callback = on_clear
-        self.cwd_callback = on_cwd
-        self.set_cwd_callback = on_set_cwd
-        self.queue_callback = on_queue
-        self.settings_callback = on_settings
-        self.callback_query_handler = on_callback_query
+        await self.on_command_callbacks[command_name](context, args)
     
     def setup_handlers(self):
         """Setup bot command and message handlers"""
-        self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(CommandHandler("execute", self.execute_command))
-        self.application.add_handler(CommandHandler("clear", self.clear_command))
-        self.application.add_handler(CommandHandler("status", self.status_command))
-        self.application.add_handler(CommandHandler("queue", self.queue_command))
-        self.application.add_handler(CommandHandler("cwd", self.cwd_command))
-        self.application.add_handler(CommandHandler("set_cwd", self.set_cwd_command))
-        self.application.add_handler(CommandHandler("settings", self.settings_command))
-        self.application.add_handler(CallbackQueryHandler(self.handle_callback_query))
+        # Register command handlers dynamically
+        for command in self.on_command_callbacks:
+            handler = lambda update, context, cmd=command: asyncio.create_task(
+                self._wrap_command(cmd, update, context)
+            )
+            self.application.add_handler(CommandHandler(command, handler))
+        
+        # Register callback query handler
+        self.application.add_handler(CallbackQueryHandler(self.handle_telegram_callback))
+        
+        # Register message handler
         self.application.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_telegram_message)
         )
     
-    async def send_message(self, chat_id: int, text: str, parse_mode: str = None):
-        """Send message to specific chat"""
-        bot = self.application.bot
-        
-        # Split long messages
-        if len(text) > 4000:
-            for i in range(0, len(text), 4000):
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=text[i:i+4000],
-                    parse_mode=parse_mode if parse_mode != 'Markdown' else 'MarkdownV2'
-                )
-                await asyncio.sleep(0.1)  # Avoid rate limiting
-        else:
-            await bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                parse_mode=parse_mode if parse_mode != 'Markdown' else 'MarkdownV2'
-            )
-    
-    async def send_settings_message(self, chat_id: int, text: str, reply_markup: InlineKeyboardMarkup):
+    async def send_settings_message(self, chat_id: int, text: str, reply_markup: TGInlineKeyboardMarkup):
         """Send message with inline keyboard"""
         bot = self.application.bot
         await bot.send_message(
@@ -350,3 +212,182 @@ How it works:
                     
                 retry_delay = min(retry_delay * 1.5, 60)  # Exponential backoff, max 60s
                 attempt += 1
+    
+    # Implementation of BaseIMClient abstract methods
+    
+    async def send_message(self, context: MessageContext, text: str, 
+                          parse_mode: Optional[str] = None,
+                          reply_to: Optional[str] = None) -> str:
+        """Send a text message - BaseIMClient implementation"""
+        bot = self.application.bot
+        
+        # Convert MessageContext to Telegram chat_id
+        chat_id = int(context.channel_id)
+        
+        # Handle thread_id as reply_to_message_id in Telegram
+        kwargs = {
+            'chat_id': chat_id,
+            'text': text
+        }
+        
+        if parse_mode:
+            kwargs['parse_mode'] = parse_mode if parse_mode != 'markdown' else 'MarkdownV2'
+            
+        if reply_to or context.thread_id:
+            kwargs['reply_to_message_id'] = int(reply_to or context.thread_id)
+        
+        try:
+            message = await bot.send_message(**kwargs)
+            return str(message.message_id)
+        except TelegramError as e:
+            logger.error(f"Error sending message: {e}")
+            raise
+    
+    async def send_message_with_buttons(self, context: MessageContext, text: str,
+                                      keyboard: InlineKeyboard,
+                                      parse_mode: Optional[str] = None) -> str:
+        """Send a message with inline buttons - BaseIMClient implementation"""
+        bot = self.application.bot
+        
+        # Convert our generic keyboard to Telegram keyboard
+        tg_keyboard = []
+        for row in keyboard.buttons:
+            tg_row = []
+            for button in row:
+                tg_button = TGInlineKeyboardButton(
+                    text=button.text,
+                    callback_data=button.callback_data
+                )
+                tg_row.append(tg_button)
+            tg_keyboard.append(tg_row)
+        
+        reply_markup = TGInlineKeyboardMarkup(tg_keyboard)
+        
+        chat_id = int(context.channel_id)
+        
+        try:
+            message = await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode=parse_mode if parse_mode != 'markdown' else 'MarkdownV2',
+                reply_markup=reply_markup
+            )
+            return str(message.message_id)
+        except TelegramError as e:
+            logger.error(f"Error sending message with buttons: {e}")
+            raise
+    
+    async def edit_message(self, context: MessageContext, message_id: str,
+                          text: Optional[str] = None,
+                          keyboard: Optional[InlineKeyboard] = None) -> bool:
+        """Edit an existing message - BaseIMClient implementation"""
+        bot = self.application.bot
+        chat_id = int(context.channel_id)
+        
+        try:
+            if text and keyboard:
+                # Convert keyboard
+                tg_keyboard = []
+                for row in keyboard.buttons:
+                    tg_row = []
+                    for button in row:
+                        tg_button = TGInlineKeyboardButton(
+                            text=button.text,
+                            callback_data=button.callback_data
+                        )
+                        tg_row.append(tg_button)
+                    tg_keyboard.append(tg_row)
+                
+                reply_markup = TGInlineKeyboardMarkup(tg_keyboard)
+                
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=int(message_id),
+                    text=text,
+                    reply_markup=reply_markup
+                )
+            elif text:
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=int(message_id),
+                    text=text
+                )
+            elif keyboard:
+                # Convert keyboard
+                tg_keyboard = []
+                for row in keyboard.buttons:
+                    tg_row = []
+                    for button in row:
+                        tg_button = TGInlineKeyboardButton(
+                            text=button.text,
+                            callback_data=button.callback_data
+                        )
+                        tg_row.append(tg_button)
+                    tg_keyboard.append(tg_row)
+                
+                reply_markup = TGInlineKeyboardMarkup(tg_keyboard)
+                
+                await bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=int(message_id),
+                    reply_markup=reply_markup
+                )
+            
+            return True
+        except TelegramError as e:
+            logger.error(f"Error editing message: {e}")
+            return False
+    
+    async def answer_callback(self, callback_id: str, text: Optional[str] = None,
+                            show_alert: bool = False) -> bool:
+        """Answer a callback query - BaseIMClient implementation"""
+        # Get the stored callback query
+        if callback_id in self._callback_queries:
+            query = self._callback_queries[callback_id]
+            try:
+                await query.answer(text=text, show_alert=show_alert)
+                # Clean up
+                del self._callback_queries[callback_id]
+                return True
+            except TelegramError as e:
+                logger.error(f"Error answering callback: {e}")
+                return False
+        return False
+    
+    def register_handlers(self):
+        """Register platform-specific handlers - BaseIMClient implementation"""
+        # This is already implemented as setup_handlers()
+        self.setup_handlers()
+    
+    async def get_user_info(self, user_id: str) -> Dict[str, Any]:
+        """Get information about a user - BaseIMClient implementation"""
+        bot = self.application.bot
+        
+        try:
+            user = await bot.get_chat(int(user_id))
+            return {
+                'id': str(user.id),
+                'username': user.username,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'type': user.type
+            }
+        except TelegramError as e:
+            logger.error(f"Error getting user info: {e}")
+            raise
+    
+    async def get_channel_info(self, channel_id: str) -> Dict[str, Any]:
+        """Get information about a channel/chat - BaseIMClient implementation"""
+        bot = self.application.bot
+        
+        try:
+            chat = await bot.get_chat(int(channel_id))
+            return {
+                'id': str(chat.id),
+                'title': chat.title,
+                'type': chat.type,
+                'username': chat.username
+            }
+        except TelegramError as e:
+            logger.error(f"Error getting channel info: {e}")
+            raise

@@ -70,8 +70,7 @@ else
     echo "ERROR: .env file not found!"
     echo "Please create a .env file with required environment variables:"
     echo "  TELEGRAM_BOT_TOKEN=your_bot_token"
-    echo "  TARGET_CHAT_ID=your_chat_id (optional)"
-    echo "  ALLOWED_USERS=user_id1,user_id2 (optional)"
+    echo "  TELEGRAM_TARGET_CHAT_ID=your_chat_id (optional)"
     echo "  CLAUDE_CWD=./_tmp (optional, default: ./_tmp)"
     exit 1
 fi

@@ -71,7 +71,7 @@ class ClaudeClient:
 
         # Get ClaudeCode's current working directory
         cwd = self.options.cwd or os.getcwd()
-        
+
         # Normalize paths for consistent comparison
         cwd = os.path.normpath(cwd)
         full_path = os.path.normpath(full_path)
@@ -178,11 +178,13 @@ class ClaudeClient:
             url_str = str(block.input["url"])
             escaped_url = escape_markdown(url_str, version=2)
             input_info.append(f"🌐 URL: `{escaped_url}`")
-        
+
         if "prompt" in block.input and block.input["prompt"]:
             prompt_str = str(block.input["prompt"])
             if len(prompt_str) > 100:
-                escaped_prompt = escape_markdown(prompt_str[:100], version=2) + "\\.\\.\\."
+                escaped_prompt = (
+                    escape_markdown(prompt_str[:100], version=2) + "\\.\\.\\."
+                )
             else:
                 escaped_prompt = escape_markdown(prompt_str, version=2)
             input_info.append(f"📝 Prompt: {escaped_prompt}")
@@ -195,7 +197,7 @@ class ClaudeClient:
             else:
                 escaped_old = escape_markdown(old_str, version=2)
             input_info.append(f"🔍 Old: `{escaped_old}`")
-        
+
         if "new_string" in block.input and block.input["new_string"]:
             new_str = str(block.input["new_string"])
             if len(new_str) > 50:
@@ -212,15 +214,17 @@ class ClaudeClient:
         # Other tool-specific parameters
         if "limit" in block.input and block.input["limit"]:
             input_info.append(f"🔢 Limit: {block.input['limit']}")
-        
+
         if "offset" in block.input and block.input["offset"]:
             input_info.append(f"📍 Offset: {block.input['offset']}")
 
         # Task tool parameters
         if "subagent_type" in block.input and block.input["subagent_type"]:
-            escaped_agent = escape_markdown(str(block.input["subagent_type"]), version=2)
+            escaped_agent = escape_markdown(
+                str(block.input["subagent_type"]), version=2
+            )
             input_info.append(f"🤖 Agent: `{escaped_agent}`")
-        
+
         if "plan" in block.input and block.input["plan"]:
             plan_str = str(block.input["plan"])
             if len(plan_str) > 100:
@@ -233,16 +237,18 @@ class ClaudeClient:
         if "cell_id" in block.input and block.input["cell_id"]:
             escaped_cell_id = escape_markdown(str(block.input["cell_id"]), version=2)
             input_info.append(f"📊 Cell ID: `{escaped_cell_id}`")
-        
+
         if "cell_type" in block.input and block.input["cell_type"]:
-            escaped_cell_type = escape_markdown(str(block.input["cell_type"]), version=2)
+            escaped_cell_type = escape_markdown(
+                str(block.input["cell_type"]), version=2
+            )
             input_info.append(f"📝 Cell Type: `{escaped_cell_type}`")
 
         # WebSearch parameters
         if "allowed_domains" in block.input and block.input["allowed_domains"]:
             domains_count = len(block.input["allowed_domains"])
             input_info.append(f"✅ Allowed domains: {domains_count}")
-        
+
         if "blocked_domains" in block.input and block.input["blocked_domains"]:
             domains_count = len(block.input["blocked_domains"])
             input_info.append(f"🚫 Blocked domains: {domains_count}")
@@ -251,11 +257,11 @@ class ClaudeClient:
         if "glob" in block.input and block.input["glob"]:
             escaped_glob = escape_markdown(str(block.input["glob"]), version=2)
             input_info.append(f"🎯 Glob: `{escaped_glob}`")
-        
+
         if "type" in block.input and block.input["type"]:
             escaped_type = escape_markdown(str(block.input["type"]), version=2)
             input_info.append(f"📄 Type: `{escaped_type}`")
-        
+
         if "output_mode" in block.input and block.input["output_mode"]:
             escaped_mode = escape_markdown(str(block.input["output_mode"]), version=2)
             input_info.append(f"📊 Output mode: `{escaped_mode}`")
@@ -266,11 +272,22 @@ class ClaudeClient:
         # Handle content specifically based on tool type
         # Tools that already show all their parameters don't need JSON
         show_json = True
-        no_json_tools = ["Bash", "Read", "Write", "Edit", "MultiEdit", "LS", "Glob", "Grep", "WebFetch", "WebSearch"]
-        
+        no_json_tools = [
+            "Bash",
+            "Read",
+            "Write",
+            "Edit",
+            "MultiEdit",
+            "LS",
+            "Glob",
+            "Grep",
+            "WebFetch",
+            "WebSearch",
+        ]
+
         if block.name in no_json_tools:
             show_json = False
-        
+
         if block.name == "TodoWrite":
             # TodoWrite has complex todos array - show as markdown list
             if "todos" in block.input and block.input["todos"]:
@@ -306,7 +323,11 @@ class ClaudeClient:
                         tool_info += (
                             f"\n• {status_emoji} {priority_emoji} {escaped_content}"
                         )
-        elif "content" in block.input and block.input["content"] and block.name in ["Write", "Edit", "MultiEdit"]:
+        elif (
+            "content" in block.input
+            and block.input["content"]
+            and block.name in ["Write", "Edit", "MultiEdit"]
+        ):
             # Show content in code block for file write operations
             content = str(block.input["content"])
             if len(content) > 300:
@@ -370,7 +391,7 @@ class ClaudeClient:
 
     def _format_user_message(self, message: UserMessage) -> str:
         """Format UserMessage"""
-        formatted_parts = ["👤 *User*"]
+        formatted_parts = ["👤 *Response*"]
         content_parts = self._process_content_blocks(message.content)
         formatted_parts.extend(content_parts)
         return "\n\n".join(formatted_parts)
@@ -406,7 +427,9 @@ class ClaudeClient:
                 return True
         return False
 
-    async def stream_execute(self, prompt: str, on_message: Callable, user_id: int = None):
+    async def stream_execute(
+        self, prompt: str, on_message: Callable, user_id: int = None
+    ):
         """Execute query with streaming output"""
         try:
             async for message in query(prompt=prompt, options=self.options):
@@ -420,21 +443,23 @@ class ClaudeClient:
 
                 # Determine message type for filtering (simplified to main categories)
                 message_type = None
-                if hasattr(message, '__class__'):
+                if hasattr(message, "__class__"):
                     class_name = message.__class__.__name__
-                    if class_name == 'SystemMessage':
-                        message_type = 'system'
-                    elif class_name == 'UserMessage':
-                        message_type = 'user'  # This shows tool responses
-                    elif class_name == 'AssistantMessage':
-                        message_type = 'assistant'
-                    elif class_name == 'ResultMessage':
-                        message_type = 'result'
+                    if class_name == "SystemMessage":
+                        message_type = "system"
+                    elif class_name == "UserMessage":
+                        message_type = "user"  # This shows tool responses
+                    elif class_name == "AssistantMessage":
+                        message_type = "assistant"
+                    elif class_name == "ResultMessage":
+                        message_type = "result"
 
                 formatted_message = self.format_message(message)
                 if formatted_message and formatted_message.strip():
                     await on_message(formatted_message, message_type)
         except Exception as e:
             logger.error(f"Error in streaming execution: {e}")
-            await on_message(f"❌ Error: {str(e)}", 'system')  # Error messages go to system category
+            await on_message(
+                f"❌ Error: {str(e)}", "system"
+            )  # Error messages go to system category
             raise

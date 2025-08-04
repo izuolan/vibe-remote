@@ -3,7 +3,7 @@ import os
 import sys
 import logging
 from dotenv import load_dotenv
-from config import AppConfig
+from config.settings import AppConfig
 from core.controller import Controller
 
 # Load environment variables from .env file
