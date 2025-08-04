@@ -1,9 +1,10 @@
 import asyncio
 import logging
 from typing import Callable, Optional
-from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, Bot, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.helpers import escape_markdown
+from telegram.error import TelegramError
 from config import TelegramConfig
 
 
@@ -21,6 +22,8 @@ class TelegramBot:
         self.cwd_callback: Optional[Callable] = None
         self.set_cwd_callback: Optional[Callable] = None
         self.queue_callback: Optional[Callable] = None
+        self.settings_callback: Optional[Callable] = None
+        self.callback_query_handler: Optional[Callable] = None
         
     def check_permission(self, user_id: int) -> bool:
         """Check if user is allowed to use the bot"""
@@ -49,6 +52,7 @@ Commands:
 /queue - Show messages in queue
 /cwd - Show current working directory
 /set_cwd <path> - Set working directory
+/settings - Personalization settings
 
 How it works:
 • Send any message to add it to the queue
@@ -160,6 +164,22 @@ How it works:
             if response:
                 await update.message.reply_text(response)
     
+    async def settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /settings command"""
+        if not self.check_permission(update.effective_user.id):
+            return
+            
+        chat_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        
+        if self.settings_callback:
+            await self.settings_callback(chat_id, user_id)
+    
+    async def handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle callback queries from inline keyboards"""
+        if self.callback_query_handler:
+            await self.callback_query_handler(update.callback_query)
+    
     def register_callbacks(self, 
                          on_message: Callable = None,
                          on_execute: Callable = None,
@@ -167,7 +187,9 @@ How it works:
                          on_clear: Callable = None,
                          on_cwd: Callable = None,
                          on_set_cwd: Callable = None,
-                         on_queue: Callable = None):
+                         on_queue: Callable = None,
+                         on_settings: Callable = None,
+                         on_callback_query: Callable = None):
         """Register callback functions"""
         self.message_callback = on_message
         self.execute_callback = on_execute
@@ -176,6 +198,8 @@ How it works:
         self.cwd_callback = on_cwd
         self.set_cwd_callback = on_set_cwd
         self.queue_callback = on_queue
+        self.settings_callback = on_settings
+        self.callback_query_handler = on_callback_query
     
     def setup_handlers(self):
         """Setup bot command and message handlers"""
@@ -186,6 +210,8 @@ How it works:
         self.application.add_handler(CommandHandler("queue", self.queue_command))
         self.application.add_handler(CommandHandler("cwd", self.cwd_command))
         self.application.add_handler(CommandHandler("set_cwd", self.set_cwd_command))
+        self.application.add_handler(CommandHandler("settings", self.settings_command))
+        self.application.add_handler(CallbackQueryHandler(self.handle_callback_query))
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
         )
@@ -209,6 +235,89 @@ How it works:
                 text=text,
                 parse_mode=parse_mode if parse_mode != 'Markdown' else 'MarkdownV2'
             )
+    
+    async def send_settings_message(self, chat_id: int, text: str, reply_markup: InlineKeyboardMarkup):
+        """Send message with inline keyboard"""
+        bot = self.application.bot
+        await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode='MarkdownV2',
+            reply_markup=reply_markup
+        )
+    
+    async def send_message_smart(self, chat_id: int, text: str, message_type: str = None):
+        """Send message with smart format fallback for different message types"""
+        bot = self.application.bot
+        
+        # Split long messages
+        if len(text) > 4000:
+            for i in range(0, len(text), 4000):
+                await self.send_message_smart(chat_id, text[i:i+4000], message_type)
+                await asyncio.sleep(0.1)
+            return
+        
+        # For result messages, try to preserve formatting
+        if message_type == 'result':
+            # Try original Markdown first
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode='Markdown'
+                )
+                return
+            except TelegramError:
+                pass
+            
+            # Try HTML as fallback
+            try:
+                # Simple Markdown to HTML conversion
+                html_text = self._markdown_to_html(text)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=html_text,
+                    parse_mode='HTML'
+                )
+                return
+            except TelegramError:
+                pass
+        
+        # Default to escaped MarkdownV2 for all other cases
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode='MarkdownV2'
+            )
+        except TelegramError:
+            # Last resort: send as plain text
+            await bot.send_message(
+                chat_id=chat_id,
+                text=text
+            )
+    
+    def _markdown_to_html(self, text: str) -> str:
+        """Simple Markdown to HTML conversion for common patterns"""
+        import re
+        
+        # First escape HTML entities
+        text = text.replace('&', '&amp;')
+        text = text.replace('<', '&lt;')
+        text = text.replace('>', '&gt;')
+        
+        # Convert code blocks (must be done before inline code)
+        text = re.sub(r'```([^`]+)```', r'<pre>\1</pre>', text, flags=re.DOTALL)
+        text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
+        
+        # Convert bold and italic
+        text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
+        text = re.sub(r'\*([^*]+)\*', r'<i>\1</i>', text)
+        
+        # Convert links
+        text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
+        
+        return text
     
     def run(self):
         """Run the bot with infinite retry mechanism"""

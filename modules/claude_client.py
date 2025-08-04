@@ -71,13 +71,17 @@ class ClaudeClient:
 
         # Get ClaudeCode's current working directory
         cwd = self.options.cwd or os.getcwd()
+        
+        # Normalize paths for consistent comparison
+        cwd = os.path.normpath(cwd)
+        full_path = os.path.normpath(full_path)
 
         try:
             # If the path starts with cwd, make it relative
-            if full_path.startswith(cwd):
+            if full_path.startswith(cwd + os.sep) or full_path == cwd:
                 relative = os.path.relpath(full_path, cwd)
                 # Use "./" prefix for current directory files
-                if not relative.startswith("."):
+                if not relative.startswith(".") and relative != ".":
                     relative = "./" + relative
                 return relative
             else:
@@ -143,13 +147,18 @@ class ClaudeClient:
 
         # Command operations
         if "command" in block.input and block.input["command"]:
-            escaped_cmd = escape_markdown(block.input["command"], version=2)
-            input_info.append(f"💻 Command: `{escaped_cmd}`")
+            cmd = block.input["command"]
+            # For multi-line commands, use code block
+            if "\n" in cmd or len(cmd) > 80:
+                input_info.append(f"💻 Command:\n```bash\n{cmd}\n```")
+            else:
+                escaped_cmd = escape_markdown(cmd, version=2)
+                input_info.append(f"💻 Command: `{escaped_cmd}`")
 
         # Description (for Bash tool)
         if "description" in block.input and block.input["description"]:
-            escaped_desc = escape_markdown(block.input["description"], version=2)
-            input_info.append(f"📝 Description: {escaped_desc}")
+            desc = block.input["description"]
+            input_info.append(f"📝 Description: `{escape_markdown(desc, version=2)}`")
 
         # Pattern/Query operations
         if "pattern" in block.input and block.input["pattern"]:
@@ -255,10 +264,14 @@ class ClaudeClient:
             tool_info += "\n" + "\n".join(input_info)
 
         # Handle content specifically based on tool type
-        if block.name == "Bash":
-            # Bash tool already shows command and description, don't show additional JSON
-            pass
-        elif block.name == "TodoWrite":
+        # Tools that already show all their parameters don't need JSON
+        show_json = True
+        no_json_tools = ["Bash", "Read", "Write", "Edit", "MultiEdit", "LS", "Glob", "Grep", "WebFetch", "WebSearch"]
+        
+        if block.name in no_json_tools:
+            show_json = False
+        
+        if block.name == "TodoWrite":
             # TodoWrite has complex todos array - show as markdown list
             if "todos" in block.input and block.input["todos"]:
                 todos = block.input["todos"]
@@ -293,14 +306,14 @@ class ClaudeClient:
                         tool_info += (
                             f"\n• {status_emoji} {priority_emoji} {escaped_content}"
                         )
-        elif "content" in block.input and block.input["content"]:
-            # Show content in code block for file operations
+        elif "content" in block.input and block.input["content"] and block.name in ["Write", "Edit", "MultiEdit"]:
+            # Show content in code block for file write operations
             content = str(block.input["content"])
             if len(content) > 300:
                 content = content[:300] + "..."
             tool_info += f"\n```\n{content}\n```"
-        elif block.input and len(str(block.input)) < 200:
-            # Show short input as JSON for simple cases
+        elif show_json and block.input and len(str(block.input)) < 200:
+            # Show short input as JSON for tools that need it
             import json
 
             try:
@@ -364,8 +377,8 @@ class ClaudeClient:
 
     def _format_result_message(self, message: ResultMessage) -> str:
         """Format ResultMessage"""
-        # Convert duration to readable format
-        total_seconds = (message.duration_ms + message.duration_api_ms) / 1000
+        # Use total duration (duration_ms includes API time)
+        total_seconds = message.duration_ms / 1000
         minutes = int(total_seconds // 60)
         seconds = int(total_seconds % 60)
 
@@ -374,15 +387,12 @@ class ClaudeClient:
         else:
             duration_str = f"{seconds}s"
 
-        escaped_subtype = escape_markdown(message.subtype, version=2)
-        escaped_duration = escape_markdown(duration_str, version=2)
-
-        result_text = f"📊 *Result \\({escaped_subtype}\\)*\n"
-        result_text += f"⏱️ Duration: {escaped_duration}\n"
+        # Don't escape for Result messages - they will be handled by smart formatting
+        result_text = f"📊 **Result ({message.subtype})**\n"
+        result_text += f"⏱️ Duration: {duration_str}\n"
 
         if message.result:
-            escaped_result = escape_markdown(message.result, version=2)
-            result_text += f"\n{escaped_result}\n"
+            result_text += f"\n{message.result}\n"
 
         return result_text
 
@@ -396,7 +406,7 @@ class ClaudeClient:
                 return True
         return False
 
-    async def stream_execute(self, prompt: str, on_message: Callable):
+    async def stream_execute(self, prompt: str, on_message: Callable, user_id: int = None):
         """Execute query with streaming output"""
         try:
             async for message in query(prompt=prompt, options=self.options):
@@ -408,10 +418,23 @@ class ClaudeClient:
                 if self._is_skip_message(message):
                     continue
 
+                # Determine message type for filtering (simplified to main categories)
+                message_type = None
+                if hasattr(message, '__class__'):
+                    class_name = message.__class__.__name__
+                    if class_name == 'SystemMessage':
+                        message_type = 'system'
+                    elif class_name == 'UserMessage':
+                        message_type = 'user'  # This shows tool responses
+                    elif class_name == 'AssistantMessage':
+                        message_type = 'assistant'
+                    elif class_name == 'ResultMessage':
+                        message_type = 'result'
+
                 formatted_message = self.format_message(message)
                 if formatted_message and formatted_message.strip():
-                    await on_message(formatted_message)
+                    await on_message(formatted_message, message_type)
         except Exception as e:
             logger.error(f"Error in streaming execution: {e}")
-            await on_message(f"❌ Error: {str(e)}")
+            await on_message(f"❌ Error: {str(e)}", 'system')  # Error messages go to system category
             raise

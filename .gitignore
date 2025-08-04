@@ -147,6 +147,9 @@ claude_proxy.log
 demolog.log
 _tmp/
 .DS_Store
+logs/
+.bot.pid
+user_settings.json
 
 # Config files with secrets
 config/secrets.py
