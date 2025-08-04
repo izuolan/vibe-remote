@@ -7,7 +7,7 @@ from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.errors import SlackApiError
 
-from .base_im_client import BaseIMClient, MessageContext, InlineKeyboard, InlineButton
+from .base import BaseIMClient, MessageContext, InlineKeyboard, InlineButton
 from config.settings import SlackConfig
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,9 @@ class SlackBot(BaseIMClient):
         # Store callback handlers
         self.command_handlers: Dict[str, Callable] = {}
         self.slash_command_handlers: Dict[str, Callable] = {}
+        
+        # Store trigger IDs for modal interactions
+        self.trigger_ids: Dict[str, str] = {}
     
     def _ensure_clients(self):
         """Ensure web and socket clients are initialized"""
@@ -335,7 +338,13 @@ class SlackBot(BaseIMClient):
         context = MessageContext(
             user_id=payload.get("user_id"),
             channel_id=payload.get("channel_id"),
-            platform_specific=payload
+            platform_specific={
+                "trigger_id": payload.get("trigger_id"),
+                "response_url": payload.get("response_url"),
+                "command": command,
+                "text": payload.get("text"),
+                "payload": payload
+            }
         )
         
         # Send immediate acknowledgment to Slack
@@ -363,7 +372,7 @@ class SlackBot(BaseIMClient):
                 )
     
     async def _handle_interactive(self, payload: Dict[str, Any]):
-        """Handle interactive components (buttons, etc.)"""
+        """Handle interactive components (buttons, modal submissions, etc.)"""
         if payload.get("type") == "block_actions":
             # Handle button clicks
             user = payload.get("user", {})
@@ -388,6 +397,35 @@ class SlackBot(BaseIMClient):
                         )
                         
                         await self.on_callback_query_callback(context, callback_data)
+                        
+        elif payload.get("type") == "view_submission":
+            # Handle modal submissions
+            await self._handle_view_submission(payload)
+    
+    async def _handle_view_submission(self, payload: Dict[str, Any]):
+        """Handle modal dialog submissions"""
+        view = payload.get("view", {})
+        callback_id = view.get("callback_id")
+        
+        if callback_id == "settings_modal":
+            # Handle settings modal submission
+            user_id = payload.get("user", {}).get("id")
+            values = view.get("state", {}).get("values", {})
+            
+            # Extract selected hidden message types
+            hidden_types_data = values.get("hidden_message_types", {}).get("hidden_types_select", {})
+            selected_options = hidden_types_data.get("selected_options", [])
+            
+            # Get the values from selected options
+            hidden_types = [opt.get("value") for opt in selected_options]
+            
+            # Update settings - need access to settings manager
+            if hasattr(self, '_on_settings_update'):
+                await self._on_settings_update(user_id, hidden_types)
+            
+            # Send success message to the user (via DM or channel)
+            # We need to find the right channel to send the message
+            # For now, we'll rely on the controller to handle this
     
     def run(self):
         """Run the Slack bot"""
@@ -449,6 +487,139 @@ class SlackBot(BaseIMClient):
             logger.error(f"Error getting channel info: {e}")
             raise
     
+    async def open_settings_modal(self, trigger_id: str, user_settings: Any, message_types: list, display_names: dict):
+        """Open a modal dialog for settings"""
+        self._ensure_clients()
+        
+        # Create options for the multi-select menu
+        options = []
+        selected_options = []
+        
+        for msg_type in message_types:
+            display_name = display_names.get(msg_type, msg_type)
+            option = {
+                "text": {
+                    "type": "plain_text",
+                    "text": display_name,
+                    "emoji": True
+                },
+                "value": msg_type,
+                "description": {
+                    "type": "plain_text",
+                    "text": self._get_message_type_description(msg_type),
+                    "emoji": True
+                }
+            }
+            options.append(option)
+            
+            # If this type is hidden, add THE SAME option object to selected options
+            if msg_type in user_settings.hidden_message_types:
+                selected_options.append(option)  # Same object reference!
+        
+        logger.info(f"Creating modal with {len(options)} options, {len(selected_options)} selected")
+        logger.info(f"Hidden types: {user_settings.hidden_message_types}")
+        
+        # Debug: Log the actual data being sent
+        import json
+        logger.info(f"Options: {json.dumps(options, indent=2)}")
+        logger.info(f"Selected options: {json.dumps(selected_options, indent=2)}")
+        
+        # Create the multi-select element
+        multi_select_element = {
+            "type": "multi_static_select",
+            "placeholder": {
+                "type": "plain_text",
+                "text": "Select message types to hide",
+                "emoji": True
+            },
+            "options": options,
+            "action_id": "hidden_types_select"
+        }
+        
+        # Only add initial_options if there are selected options
+        if selected_options:
+            multi_select_element["initial_options"] = selected_options
+        
+        # Create the modal view
+        view = {
+            "type": "modal",
+            "callback_id": "settings_modal",
+            "title": {
+                "type": "plain_text",
+                "text": "Settings",
+                "emoji": True
+            },
+            "submit": {
+                "type": "plain_text",
+                "text": "Save",
+                "emoji": True
+            },
+            "close": {
+                "type": "plain_text",
+                "text": "Cancel",
+                "emoji": True
+            },
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Message Visibility Settings",
+                        "emoji": True
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "Choose which message types to *hide* from Claude Code output. Hidden messages won't appear in your Slack workspace."
+                    }
+                },
+                {
+                    "type": "divider"
+                },
+                {
+                    "type": "input",
+                    "block_id": "hidden_message_types",
+                    "element": multi_select_element,
+                    "label": {
+                        "type": "plain_text",
+                        "text": "Hide these message types:",
+                        "emoji": True
+                    },
+                    "optional": True
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": "_💡 Tip: You can show/hide message types at any time. Changes apply immediately to new messages._"
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        try:
+            await self.web_client.views_open(
+                trigger_id=trigger_id,
+                view=view
+            )
+        except SlackApiError as e:
+            logger.error(f"Error opening modal: {e}")
+            raise
+    
+    def _get_message_type_description(self, msg_type: str) -> str:
+        """Get description for a message type"""
+        descriptions = {
+            "system": "System initialization and status messages",
+            "response": "Tool execution responses and results",
+            "assistant": "Claude's messages and explanations",
+            "result": "Final execution results and summaries"
+        }
+        return descriptions.get(msg_type, f"{msg_type} messages")
+    
     def register_callbacks(self, on_message: Optional[Callable] = None,
                          on_command: Optional[Dict[str, Callable]] = None,
                          on_callback_query: Optional[Callable] = None,
@@ -465,6 +636,10 @@ class SlackBot(BaseIMClient):
             slash_commands = kwargs['on_slash_command']
             if isinstance(slash_commands, dict):
                 self.slash_command_handlers.update(slash_commands)
+        
+        # Register settings update handler
+        if 'on_settings_update' in kwargs:
+            self._on_settings_update = kwargs['on_settings_update']
     
     async def get_or_create_thread(self, channel_id: str, user_id: str) -> Optional[str]:
         """Get existing thread timestamp or return None for new thread"""

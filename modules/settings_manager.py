@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, asdict, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from pathlib import Path
 
 
@@ -30,7 +30,7 @@ class SettingsManager:
     
     def __init__(self, settings_file: str = "user_settings.json"):
         self.settings_file = Path(settings_file)
-        self.settings: Dict[int, UserSettings] = {}
+        self.settings: Dict[Union[int, str], UserSettings] = {}
         self._load_settings()
     
     def _load_settings(self):
@@ -40,7 +40,11 @@ class SettingsManager:
                 with open(self.settings_file, 'r') as f:
                     data = json.load(f)
                     for user_id_str, user_data in data.items():
-                        user_id = int(user_id_str)
+                        # Try to convert to int for Telegram, keep as string for Slack
+                        try:
+                            user_id = int(user_id_str)
+                        except ValueError:
+                            user_id = user_id_str
                         self.settings[user_id] = UserSettings.from_dict(user_data)
                 logger.info(f"Loaded settings for {len(self.settings)} users")
             else:
@@ -62,19 +66,19 @@ class SettingsManager:
         except Exception as e:
             logger.error(f"Error saving settings: {e}")
     
-    def get_user_settings(self, user_id: int) -> UserSettings:
+    def get_user_settings(self, user_id: Union[int, str]) -> UserSettings:
         """Get settings for a specific user"""
         if user_id not in self.settings:
             self.settings[user_id] = UserSettings()
             self._save_settings()
         return self.settings[user_id]
     
-    def update_user_settings(self, user_id: int, settings: UserSettings):
+    def update_user_settings(self, user_id: Union[int, str], settings: UserSettings):
         """Update settings for a specific user"""
         self.settings[user_id] = settings
         self._save_settings()
     
-    def toggle_hidden_message_type(self, user_id: int, message_type: str) -> bool:
+    def toggle_hidden_message_type(self, user_id: Union[int, str], message_type: str) -> bool:
         """Toggle a message type in hidden list, returns new state"""
         settings = self.get_user_settings(user_id)
         

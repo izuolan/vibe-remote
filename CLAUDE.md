@@ -38,7 +38,7 @@ python main.py
 ### Development Testing
 ```bash
 # Test imports and basic functionality
-python3 -c "from config.settings import AppConfig; from modules.im_factory import IMFactory; print('Imports successful!')"
+python3 -c "from config.settings import AppConfig; from modules.im import IMFactory; print('Imports successful!')"
 
 # Check logs in real-time
 tail -f logs/bot_*.log

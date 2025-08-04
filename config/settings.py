@@ -2,7 +2,7 @@ import os
 import logging
 from dataclasses import dataclass
 from typing import Optional
-from modules.base_im_config import BaseIMConfig
+from modules.im.base import BaseIMConfig
 
 logger = logging.getLogger(__name__)
 

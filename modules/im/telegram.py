@@ -6,7 +6,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.helpers import escape_markdown
 from telegram.error import TelegramError
 from config.settings import TelegramConfig
-from .base_im_client import BaseIMClient, MessageContext, InlineKeyboard, InlineButton
+from .base import BaseIMClient, MessageContext, InlineKeyboard, InlineButton
 
 
 logger = logging.getLogger(__name__)

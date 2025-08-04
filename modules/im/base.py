@@ -1,8 +1,14 @@
+"""Base classes and data structures for IM platform abstraction"""
+
+import logging
 from abc import ABC, abstractmethod
 from typing import Optional, Callable, Dict, Any
 from dataclasses import dataclass
 
+logger = logging.getLogger(__name__)
 
+
+# Data structures for platform-agnostic messaging
 @dataclass
 class MessageContext:
     """Platform-agnostic message context"""
@@ -26,11 +32,74 @@ class InlineKeyboard:
     buttons: list[list[InlineButton]]  # 2D array for row/column layout
 
 
+# Configuration base class
+@dataclass
+class BaseIMConfig(ABC):
+    """Abstract base class for IM platform configurations"""
+    
+    @classmethod
+    @abstractmethod
+    def from_env(cls) -> 'BaseIMConfig':
+        """Create configuration from environment variables"""
+        pass
+    
+    @abstractmethod
+    def validate(self) -> bool:
+        """Validate the configuration
+        
+        Returns:
+            True if configuration is valid
+            
+        Raises:
+            ValueError: If configuration is invalid
+        """
+        pass
+    
+    def validate_required_string(self, value: Optional[str], field_name: str) -> None:
+        """Helper method to validate required string fields
+        
+        Args:
+            value: The value to validate
+            field_name: Name of the field for error messages
+            
+        Raises:
+            ValueError: If value is None or empty
+        """
+        if not value or not value.strip():
+            raise ValueError(f"{field_name} is required and cannot be empty")
+    
+    def validate_optional_int(self, value: Optional[str], field_name: str) -> Optional[int]:
+        """Helper method to validate and convert optional integer fields
+        
+        Args:
+            value: String value to convert
+            field_name: Name of the field for error messages
+            
+        Returns:
+            Converted integer or None
+            
+        Raises:
+            ValueError: If value is not a valid integer
+        """
+        if not value:
+            return None
+        
+        try:
+            return int(value)
+        except ValueError:
+            raise ValueError(f"{field_name} must be a valid integer, got: {value}")
+
+
+# IM Client base class
 class BaseIMClient(ABC):
     """Abstract base class for IM platform clients"""
     
-    def __init__(self, config: Any):
+    def __init__(self, config: BaseIMConfig):
         self.config = config
+        # Initialize callback storage
+        self.on_message_callback: Optional[Callable] = None
+        self.on_command_callbacks: Dict[str, Callable] = {}
+        self.on_callback_query_callback: Optional[Callable] = None
         
     @abstractmethod
     async def send_message(self, context: MessageContext, text: str, 
@@ -132,7 +201,6 @@ class BaseIMClient(ABC):
         """
         pass
     
-    # Callback registration methods
     def register_callbacks(self,
                          on_message: Optional[Callable] = None,
                          on_command: Optional[Dict[str, Callable]] = None,
@@ -153,3 +221,23 @@ class BaseIMClient(ABC):
         # Store any additional callbacks
         for key, value in kwargs.items():
             setattr(self, f"{key}_callback", value)
+    
+    def log_error(self, message: str, exception: Exception = None):
+        """Standardized error logging
+        
+        Args:
+            message: Error message
+            exception: Optional exception to log
+        """
+        if exception:
+            logger.error(f"{message}: {exception}")
+        else:
+            logger.error(message)
+    
+    def log_info(self, message: str):
+        """Standardized info logging
+        
+        Args:
+            message: Info message
+        """
+        logger.info(message)

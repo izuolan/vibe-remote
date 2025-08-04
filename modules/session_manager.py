@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union, Any
 from datetime import datetime
 
 
@@ -9,26 +9,34 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class MessageData:
+    message: str
+    thread_id: Optional[str] = None
+
+@dataclass
 class UserSession:
-    user_id: int
-    chat_id: int
-    message_queue: List[str] = field(default_factory=list)
+    user_id: Union[int, str]
+    chat_id: Union[int, str]
+    message_queue: List[MessageData] = field(default_factory=list)
     is_executing: bool = False
     created_at: datetime = field(default_factory=datetime.now)
     last_activity: datetime = field(default_factory=datetime.now)
     
-    def add_message(self, message: str):
+    def add_message(self, message: str, thread_id: Optional[str] = None):
         """Add message to queue"""
-        self.message_queue.append(message)
+        self.message_queue.append(MessageData(message=message, thread_id=thread_id))
         self.last_activity = datetime.now()
     
     
-    def get_next_message(self) -> Optional[str]:
+    def get_next_message(self) -> Optional[Dict[str, Any]]:
         """Get and remove the next message from queue"""
         if self.message_queue:
-            message = self.message_queue.pop(0)
+            message_data = self.message_queue.pop(0)
             self.last_activity = datetime.now()
-            return message
+            return {
+                'message': message_data.message,
+                'thread_id': message_data.thread_id
+            }
         return None
     
     def clear_queue(self):
@@ -47,7 +55,8 @@ class UserSession:
         
         if self.message_queue:
             status += "\n\n📋 Queued messages:"
-            for idx, msg in enumerate(self.message_queue, 1):
+            for idx, msg_data in enumerate(self.message_queue, 1):
+                msg = msg_data.message
                 preview = msg[:50] + "..." if len(msg) > 50 else msg
                 status += f"\n{idx}. {preview}"
         elif self.is_executing:
@@ -60,10 +69,10 @@ class UserSession:
 
 class SessionManager:
     def __init__(self):
-        self.sessions: Dict[int, UserSession] = {}
+        self.sessions: Dict[Union[int, str], UserSession] = {}
         self._lock = asyncio.Lock()
     
-    async def get_or_create_session(self, user_id: int, chat_id: int) -> UserSession:
+    async def get_or_create_session(self, user_id: Union[int, str], chat_id: Union[int, str]) -> UserSession:
         """Get existing session or create new one"""
         async with self._lock:
             if user_id not in self.sessions:
@@ -72,28 +81,41 @@ class SessionManager:
             
             return self.sessions[user_id]
     
-    async def add_message(self, user_id: int, chat_id: int, message: str) -> str:
+    async def add_message(self, user_id: Union[int, str], chat_id: Union[int, str], message: str) -> str:
         """Add message to user's queue"""
         session = await self.get_or_create_session(user_id, chat_id)
         session.add_message(message)
         
         return f"Message added to queue. Total messages: {len(session.message_queue)}"
     
-    async def get_next_message(self, user_id: int) -> Optional[str]:
-        """Get next message from user's queue"""
+    async def add_message_with_context(self, user_id: Union[int, str], chat_id: Union[int, str], 
+                                      message: str, thread_id: Optional[str] = None) -> str:
+        """Add message with thread context to user's queue"""
+        session = await self.get_or_create_session(user_id, chat_id)
+        session.add_message(message, thread_id=thread_id)
+        
+        return f"Message added to queue. Total messages: {len(session.message_queue)}"
+    
+    async def get_next_message(self, user_id: Union[int, str]) -> Optional[str]:
+        """Get next message from user's queue (legacy method)"""
+        message_data = await self.get_next_message_with_context(user_id)
+        return message_data['message'] if message_data else None
+    
+    async def get_next_message_with_context(self, user_id: Union[int, str]) -> Optional[Dict[str, Any]]:
+        """Get next message with thread context from user's queue"""
         if user_id not in self.sessions:
             return None
         
         session = self.sessions[user_id]
         return session.get_next_message()
     
-    async def has_messages(self, user_id: int) -> bool:
+    async def has_messages(self, user_id: Union[int, str]) -> bool:
         """Check if user has messages in queue"""
         if user_id not in self.sessions:
             return False
         return len(self.sessions[user_id].message_queue) > 0
     
-    async def get_queue_details(self, user_id: int) -> str:
+    async def get_queue_details(self, user_id: Union[int, str]) -> str:
         """Get detailed queue information for user"""
         if user_id not in self.sessions:
             return "No active session. Send a message to start."
@@ -109,8 +131,9 @@ class SessionManager:
         queue_info = f"📋 Message Queue ({len(session.message_queue)} messages)\n"
         queue_info += f"Status: {'🟢 Processing' if session.is_executing else '⭕ Waiting'}\n\n"
         
-        for idx, msg in enumerate(session.message_queue, 1):
+        for idx, msg_data in enumerate(session.message_queue, 1):
             # Show first 100 characters of each message
+            msg = msg_data.message
             preview = msg[:100] + "..." if len(msg) > 100 else msg
             # Replace newlines with spaces for better display
             preview = preview.replace('\n', ' ').replace('\r', ' ')
@@ -118,7 +141,7 @@ class SessionManager:
         
         return queue_info
     
-    async def clear_queue(self, user_id: int) -> str:
+    async def clear_queue(self, user_id: Union[int, str]) -> str:
         """Clear user's message queue"""
         if user_id not in self.sessions:
             return "No active session found."
@@ -129,7 +152,7 @@ class SessionManager:
         
         return f"Cleared {message_count} messages from queue."
     
-    async def get_status(self, user_id: int) -> str:
+    async def get_status(self, user_id: Union[int, str]) -> str:
         """Get user's session status"""
         if user_id not in self.sessions:
             return "No active session. Send a message to start."
@@ -137,14 +160,14 @@ class SessionManager:
         session = self.sessions[user_id]
         return session.get_status()
     
-    async def set_executing(self, user_id: int, is_executing: bool):
+    async def set_executing(self, user_id: Union[int, str], is_executing: bool):
         """Set execution status for user session"""
         if user_id in self.sessions:
             async with self._lock:
                 self.sessions[user_id].is_executing = is_executing
                 self.sessions[user_id].last_activity = datetime.now()
     
-    async def is_executing(self, user_id: int) -> bool:
+    async def is_executing(self, user_id: Union[int, str]) -> bool:
         """Check if user has an active execution"""
         if user_id not in self.sessions:
             return False

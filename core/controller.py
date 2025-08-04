@@ -3,8 +3,7 @@ import logging
 import os
 from typing import Optional
 from config.settings import AppConfig
-from modules.base_im_client import BaseIMClient, MessageContext, InlineKeyboard, InlineButton
-from modules.im_factory import IMFactory
+from modules.im import BaseIMClient, MessageContext, InlineKeyboard, InlineButton, IMFactory
 from modules.claude_client import ClaudeClient
 from modules.session_manager import SessionManager
 from modules.settings_manager import SettingsManager
@@ -45,7 +44,8 @@ class Controller:
         self.im_client.register_callbacks(
             on_message=self.handle_user_message,
             on_command=self.command_handlers,
-            on_callback_query=self.handle_callback_query
+            on_callback_query=self.handle_callback_query,
+            on_settings_update=self.handle_settings_update
         )
     
     async def handle_start(self, context: MessageContext, args: str = ""):
@@ -131,14 +131,48 @@ Choose a command below or type any message to add it to the processing queue."""
     async def handle_user_message(self, context: MessageContext, message: str):
         """Handle incoming user message"""
         try:
-            await self.session_manager.add_message(context.user_id, context.channel_id, message)
+            # Send confirmation reply immediately
+            target_context = self._get_target_context(context)
+            
+            # For Slack, establish thread with the confirmation message
+            confirmation_msg = None
+            if self.config.platform == "slack" and hasattr(self.im_client, 'get_or_create_thread'):
+                # Create thread if needed
+                thread_ts = await self.im_client.get_or_create_thread(
+                    target_context.channel_id, 
+                    target_context.user_id
+                )
+                if thread_ts:
+                    target_context.thread_id = thread_ts
+                
+                # Send confirmation with thread context
+                confirmation_msg = await self.im_client.send_message(
+                    target_context,
+                    f"📝 *Received:* {message}\n⏳ *Processing...*",
+                    parse_mode='markdown'
+                )
+            else:
+                # For non-Slack platforms, just send confirmation
+                confirmation_msg = await self.im_client.send_message(
+                    target_context,
+                    f"📝 *Received:* {message}\n⏳ *Processing...*",
+                    parse_mode='markdown'
+                )
+            
+            # Store thread context with the message
+            thread_id = getattr(target_context, 'thread_id', None)
+            await self.session_manager.add_message_with_context(
+                context.user_id, 
+                context.channel_id, 
+                message,
+                thread_id=thread_id
+            )
             logger.info(f"User {context.user_id} added message to queue")
             
             # Check if not already executing, then start processing
             if not await self.session_manager.is_executing(context.user_id):
                 asyncio.create_task(self.process_user_queue(context))
             
-            # Don't send confirmation - user doesn't want it
         except Exception as e:
             logger.error(f"Error handling message: {e}")
             await self.im_client.send_message(context, "Error adding message to queue.")
@@ -153,10 +187,13 @@ Choose a command below or type any message to add it to the processing queue."""
             target_context = self._get_target_context(context)
             
             while await self.session_manager.has_messages(context.user_id):
-                # Get next message
-                message = await self.session_manager.get_next_message(context.user_id)
-                if not message:
+                # Get next message with context
+                message_data = await self.session_manager.get_next_message_with_context(context.user_id)
+                if not message_data:
                     break
+                
+                message = message_data['message']
+                thread_id = message_data.get('thread_id')
                 
                 # Get user's CWD from settings if available
                 custom_cwd = self.settings_manager.get_custom_cwd(context.user_id)
@@ -173,15 +210,9 @@ Choose a command below or type any message to add it to the processing queue."""
                         return
                     
                     # Send Claude's formatted output
-                    # For Slack, we want to maintain thread context
-                    if self.config.platform == "slack" and hasattr(self.im_client, 'get_or_create_thread'):
-                        # Get or create thread for this conversation
-                        thread_ts = await self.im_client.get_or_create_thread(
-                            target_context.channel_id, 
-                            target_context.user_id
-                        )
-                        if thread_ts:
-                            target_context.thread_id = thread_ts
+                    # Use stored thread context if available
+                    if thread_id:
+                        target_context.thread_id = thread_id
                     
                     await self.im_client.send_message(target_context, claude_msg, parse_mode='markdown')
                 
@@ -369,42 +400,15 @@ Choose a command below or type any message to add it to the processing queue."""
             await self.im_client.send_message(context, f"Error getting queue information: {str(e)}")
     
     async def handle_settings(self, context: MessageContext, args: str = ""):
-        """Handle settings command - show settings menu with inline keyboard"""
+        """Handle settings command - show settings menu"""
         try:
-            # Get current settings
-            user_settings = self.settings_manager.get_user_settings(context.user_id)
-            
-            # Get available message types and display names
-            message_types = self.settings_manager.get_available_message_types()
-            display_names = self.settings_manager.get_message_type_display_names()
-            
-            # Create inline keyboard buttons
-            buttons = []
-            
-            for msg_type in message_types:
-                is_hidden = msg_type in user_settings.hidden_message_types
-                checkbox = "☑️" if is_hidden else "⬜"
-                display_name = display_names.get(msg_type, msg_type)
-                button = InlineButton(
-                    text=f"{checkbox} Hide {display_name}",
-                    callback_data=f"toggle_msg_{msg_type}"
-                )
-                buttons.append([button])  # One button per row for now
-            
-            # Add info button
-            buttons.append([InlineButton("ℹ️ About Message Types", callback_data="info_msg_types")])
-            
-            keyboard = InlineKeyboard(buttons=buttons)
-            
-            # Send settings message
-            target_context = self._get_target_context(context)
-            await self.im_client.send_message_with_buttons(
-                target_context,
-                "⚙️ *Settings - Message Visibility*\n\nSelect which message types to hide from Claude output:",
-                keyboard,
-                parse_mode='markdown'
-            )
-            
+            # For Slack, use modal dialog
+            if self.config.platform == "slack":
+                await self._handle_settings_slack(context)
+            else:
+                # For other platforms, use inline keyboard
+                await self._handle_settings_traditional(context)
+                
         except Exception as e:
             logger.error(f"Error showing settings: {e}")
             target_context = self._get_target_context(context)
@@ -413,11 +417,99 @@ Choose a command below or type any message to add it to the processing queue."""
                 f"❌ Error showing settings: {str(e)}"
             )
     
+    async def _handle_settings_traditional(self, context: MessageContext):
+        """Handle settings for non-Slack platforms (Telegram, etc)"""
+        # Get current settings
+        user_settings = self.settings_manager.get_user_settings(context.user_id)
+        
+        # Get available message types and display names
+        message_types = self.settings_manager.get_available_message_types()
+        display_names = self.settings_manager.get_message_type_display_names()
+        
+        # Create inline keyboard buttons
+        buttons = []
+        
+        for msg_type in message_types:
+            is_hidden = msg_type in user_settings.hidden_message_types
+            checkbox = "☑️" if is_hidden else "⬜"
+            display_name = display_names.get(msg_type, msg_type)
+            button = InlineButton(
+                text=f"{checkbox} Hide {display_name}",
+                callback_data=f"toggle_msg_{msg_type}"
+            )
+            buttons.append([button])  # One button per row for now
+        
+        # Add info button
+        buttons.append([InlineButton("ℹ️ About Message Types", callback_data="info_msg_types")])
+        
+        keyboard = InlineKeyboard(buttons=buttons)
+        
+        # Send settings message
+        target_context = self._get_target_context(context)
+        await self.im_client.send_message_with_buttons(
+            target_context,
+            "⚙️ *Settings - Message Visibility*\n\nSelect which message types to hide from Claude output:",
+            keyboard,
+            parse_mode='markdown'
+        )
+    
+    async def _handle_settings_slack(self, context: MessageContext):
+        """Handle settings for Slack using modal dialog"""
+        # For slash commands or direct triggers, we might have trigger_id
+        trigger_id = context.platform_specific.get('trigger_id') if context.platform_specific else None
+        
+        if trigger_id and hasattr(self.im_client, 'open_settings_modal'):
+            # We have trigger_id, open modal directly
+            user_settings = self.settings_manager.get_user_settings(context.user_id)
+            message_types = self.settings_manager.get_available_message_types()
+            display_names = self.settings_manager.get_message_type_display_names()
+            
+            try:
+                await self.im_client.open_settings_modal(trigger_id, user_settings, message_types, display_names)
+            except Exception as e:
+                logger.error(f"Error opening settings modal: {e}")
+                await self.im_client.send_message(context, "❌ Failed to open settings. Please try again.")
+        else:
+            # No trigger_id, show button to open modal
+            buttons = [[
+                InlineButton(
+                    text="🛠️ Open Settings",
+                    callback_data="open_settings_modal"
+                )
+            ]]
+            
+            keyboard = InlineKeyboard(buttons=buttons)
+            
+            target_context = self._get_target_context(context)
+            await self.im_client.send_message_with_buttons(
+                target_context,
+                "⚙️ *Personalization Settings*\n\nConfigure how Claude Code messages appear in your Slack workspace.",
+                keyboard,
+                parse_mode='markdown'
+            )
+    
     async def handle_callback_query(self, context: MessageContext, callback_data: str):
         """Handle inline keyboard callbacks"""
         try:
+            # Handle settings modal open request (Slack)
+            if callback_data == "open_settings_modal" and self.config.platform == "slack":
+                trigger_id = context.platform_specific.get('trigger_id') if context.platform_specific else None
+                if trigger_id and hasattr(self.im_client, 'open_settings_modal'):
+                    user_settings = self.settings_manager.get_user_settings(context.user_id)
+                    message_types = self.settings_manager.get_available_message_types()
+                    display_names = self.settings_manager.get_message_type_display_names()
+                    
+                    try:
+                        await self.im_client.open_settings_modal(trigger_id, user_settings, message_types, display_names)
+                    except Exception as e:
+                        logger.error(f"Error opening settings modal: {e}")
+                        await self.im_client.send_message(context, "❌ Failed to open settings. Please try again.")
+                else:
+                    await self.im_client.send_message(context, "❌ Unable to open settings. Please try using the /settings command.")
+                return
+            
             # Handle command button clicks from /start message
-            if callback_data.startswith("cmd_"):
+            elif callback_data.startswith("cmd_"):
                 command = callback_data.replace("cmd_", "")
                 logger.info(f"Executing command via button click: {command}")
                 
@@ -551,6 +643,29 @@ _Tip: All commands work in DMs, channels, and threads!_"""
         except Exception as e:
             logger.error(f"Error handling callback query: {e}")
             await self.im_client.send_message(context, f"Error: {str(e)}")
+    
+    async def handle_settings_update(self, user_id: str, hidden_message_types: list):
+        """Handle settings update from modal submission (Slack)"""
+        try:
+            # Get current settings
+            user_settings = self.settings_manager.get_user_settings(user_id)
+            
+            # Update hidden message types
+            user_settings.hidden_message_types = hidden_message_types
+            
+            # Save settings
+            self.settings_manager.save_user_settings(user_id, user_settings)
+            
+            logger.info(f"Updated settings for user {user_id}: hidden types = {hidden_message_types}")
+            
+            # Send confirmation message (if we have a way to reach the user)
+            # Note: In Slack modals, we don't have direct context to send messages
+            # The modal will close automatically indicating success
+            
+        except Exception as e:
+            logger.error(f"Error updating settings: {e}")
+            # In modal context, errors are handled differently
+            raise
     
     async def periodic_cleanup(self):
         """Periodic cleanup of inactive sessions"""
