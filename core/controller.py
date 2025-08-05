@@ -121,9 +121,10 @@ How it works:
 Choose a command below or type any message to add it to the processing queue."""
 
         target_context = self._get_target_context(context)
+        formatted_welcome = self.im_client.format_markdown(welcome_text)
         await self.im_client.send_message_with_buttons(
             target_context,
-            welcome_text,
+            formatted_welcome,
             keyboard,
             parse_mode='markdown'
         )
@@ -146,16 +147,20 @@ Choose a command below or type any message to add it to the processing queue."""
                     target_context.thread_id = thread_ts
                 
                 # Send confirmation with thread context
+                confirmation_text = f"📝 *Received:* {message}\n⏳ *Processing...*"
+                formatted_confirmation = self.im_client.format_markdown(confirmation_text)
                 confirmation_msg = await self.im_client.send_message(
                     target_context,
-                    f"📝 *Received:* {message}\n⏳ *Processing...*",
+                    formatted_confirmation,
                     parse_mode='markdown'
                 )
             else:
                 # For non-Slack platforms, just send confirmation
+                confirmation_text = f"📝 *Received:* {message}\n⏳ *Processing...*"
+                formatted_confirmation = self.im_client.format_markdown(confirmation_text)
                 confirmation_msg = await self.im_client.send_message(
                     target_context,
-                    f"📝 *Received:* {message}\n⏳ *Processing...*",
+                    formatted_confirmation,
                     parse_mode='markdown'
                 )
             
@@ -214,7 +219,8 @@ Choose a command below or type any message to add it to the processing queue."""
                     if thread_id:
                         target_context.thread_id = thread_id
                     
-                    await self.im_client.send_message(target_context, claude_msg, parse_mode='markdown')
+                    formatted_msg = self.im_client.format_markdown(claude_msg)
+                    await self.im_client.send_message(target_context, formatted_msg, parse_mode='markdown')
                 
                 try:
                     await self.claude_client.stream_execute(message, on_claude_message, context.user_id)
@@ -338,7 +344,8 @@ Choose a command below or type any message to add it to the processing queue."""
             else:
                 response_text += "\n💡 (Default from .env)"
             
-            await self.im_client.send_message(context, response_text, parse_mode='markdown')
+            formatted_text = self.im_client.format_markdown(response_text)
+            await self.im_client.send_message(context, formatted_text, parse_mode='markdown')
         except Exception as e:
             logger.error(f"Error getting cwd: {e}")
             await self.im_client.send_message(context, f"Error getting working directory: {str(e)}")
@@ -383,7 +390,8 @@ Choose a command below or type any message to add it to the processing queue."""
                 f"{absolute_path}\n\n"
                 f"This setting has been saved for your user."
             )
-            await self.im_client.send_message(context, response_text, parse_mode='markdown')
+            formatted_text = self.im_client.format_markdown(response_text)
+            await self.im_client.send_message(context, formatted_text, parse_mode='markdown')
             
         except Exception as e:
             logger.error(f"Error setting cwd: {e}")
@@ -571,7 +579,8 @@ Choose a command below or type any message to add it to the processing queue."""
 
 _Tip: All commands work in DMs, channels, and threads!_"""
                 
-                await self.im_client.send_message(context, info_text, parse_mode='markdown')
+                formatted_text = self.im_client.format_markdown(info_text)
+                await self.im_client.send_message(context, formatted_text, parse_mode='markdown')
                 return
             
             # Handle settings toggle buttons (existing functionality)
@@ -638,7 +647,8 @@ _Tip: All commands work in DMs, channels, and threads!_"""
                 )
                 
                 # Send as new message
-                await self.im_client.send_message(context, info_text, parse_mode='markdown')
+                formatted_text = self.im_client.format_markdown(info_text)
+                await self.im_client.send_message(context, formatted_text, parse_mode='markdown')
                 
         except Exception as e:
             logger.error(f"Error handling callback query: {e}")

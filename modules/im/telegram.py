@@ -391,3 +391,12 @@ class TelegramBot(BaseIMClient):
         except TelegramError as e:
             logger.error(f"Error getting channel info: {e}")
             raise
+    
+    def format_markdown(self, text: str) -> str:
+        """Format markdown text for Telegram
+        
+        Telegram already uses double asterisks for bold, so we don't need to change much
+        """
+        # Telegram uses standard markdown with double asterisks for bold
+        # Just return the text as-is since it's already in the right format
+        return text

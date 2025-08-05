@@ -241,3 +241,15 @@ class BaseIMClient(ABC):
             message: Info message
         """
         logger.info(message)
+    
+    @abstractmethod
+    def format_markdown(self, text: str) -> str:
+        """Format markdown text for the specific platform
+        
+        Args:
+            text: Text with common markdown formatting
+            
+        Returns:
+            Platform-specific formatted text
+        """
+        pass

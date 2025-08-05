@@ -487,6 +487,21 @@ class SlackBot(BaseIMClient):
             logger.error(f"Error getting channel info: {e}")
             raise
     
+    def format_markdown(self, text: str) -> str:
+        """Format markdown text for Slack mrkdwn format
+        
+        Slack uses single asterisks for bold and different formatting rules
+        """
+        # Convert double asterisks to single for bold
+        formatted = text.replace('**', '*')
+        
+        # Convert inline code blocks (backticks work the same)
+        # Lists work similarly
+        # Links work similarly [text](url) -> <url|text>
+        # But we'll keep simple for now - just handle bold
+        
+        return formatted
+    
     async def open_settings_modal(self, trigger_id: str, user_settings: Any, message_types: list, display_names: dict):
         """Open a modal dialog for settings"""
         self._ensure_clients()
