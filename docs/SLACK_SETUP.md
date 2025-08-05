@@ -20,7 +20,9 @@ This guide will walk you through setting up a Slack bot for the Claude Code Remo
 
 1. In your app's settings, navigate to **"OAuth & Permissions"** in the sidebar
 2. Scroll down to **"Scopes"** → **"Bot Token Scopes"**
-3. Add the following OAuth scopes:
+3. Add ALL the following OAuth scopes to avoid permission issues:
+
+### Essential Scopes (Required)
    - `channels:history` - View messages in public channels
    - `channels:read` - View basic information about public channels
    - `chat:write` - Send messages as bot
@@ -28,7 +30,39 @@ This guide will walk you through setting up a Slack bot for the Claude Code Remo
    - `im:read` - View basic information about direct messages
    - `im:write` - Send direct messages
    - `app_mentions:read` - View messages that mention your bot
-   - `users:read` - View basic information about users (required for welcome messages)
+   - `users:read` - View basic information about users
+   - `commands` - Use slash commands (automatically added)
+
+### Private Channel Support
+   - `groups:read` - View basic information about private channels
+   - `groups:history` - View messages in private channels  
+   - `groups:write` - Send messages to private channels
+
+### Multi-Party DM Support  
+   - `mpim:read` - View basic information about group DMs
+   - `mpim:history` - View messages in group DMs
+   - `mpim:write` - Send messages to group DMs
+
+### Enhanced Features
+   - `chat:write.public` - Send messages to channels without joining
+   - `chat:write.customize` - Send messages with custom username and avatar
+   - `files:read` - View files shared in channels (for future file handling)
+   - `files:write` - Upload files (for future file upload support)
+   - `reactions:read` - View emoji reactions
+   - `reactions:write` - Add emoji reactions
+   - `users:read.email` - View email addresses (for enhanced user info)
+   - `team:read` - View team/workspace information
+
+**Note**: It's better to add all permissions now to avoid reinstalling the app multiple times later. Unused permissions won't affect the bot's performance.
+
+### Quick Permission Checklist
+To ensure full functionality, make sure you've added:
+- ✅ All Essential Scopes (9 scopes)
+- ✅ All Private Channel scopes (3 scopes) 
+- ✅ All Multi-Party DM scopes (3 scopes)
+- ✅ Any Enhanced Features you want (up to 8 additional scopes)
+
+**Total recommended scopes: ~23 scopes** for full functionality without future permission issues.
 
 ## Step 3: Install App to Workspace
 
@@ -55,11 +89,25 @@ Socket Mode allows your bot to connect without exposing a public URL.
 
 1. Go to **"Event Subscriptions"** in the sidebar
 2. Toggle **"Enable Events"** to On
-3. Under **"Subscribe to bot events"**, add:
+3. Under **"Subscribe to bot events"**, add ALL these events:
+
+### Message Events
    - `message.channels` - Messages in public channels
+   - `message.groups` - Messages in private channels
    - `message.im` - Direct messages
+   - `message.mpim` - Messages in group DMs
    - `app_mention` - When someone mentions your bot
+
+### Additional Events (Optional but Recommended)
+   - `member_joined_channel` - When bot joins a channel
+   - `member_left_channel` - When bot leaves a channel
+   - `channel_created` - When a new channel is created
+   - `channel_renamed` - When a channel is renamed
+   - `team_join` - When a new member joins the workspace
+
 4. Click **"Save Changes"**
+
+**Note**: Adding all events now prevents the need to reconfigure later when expanding bot functionality.
 
 ## Step 6: Configure Native Slash Commands (Recommended)
 
@@ -312,8 +360,8 @@ IM_PLATFORM=slack
 SLACK_BOT_TOKEN=xoxb-your-bot-token-here
 SLACK_APP_TOKEN=xapp-your-app-token-here
 
-# Optional: Default channel for all outputs
-SLACK_TARGET_CHANNEL=C1234567890
+# Optional: Whitelist of allowed channel IDs (empty = DM only, null = all channels)
+SLACK_TARGET_CHANNEL=[C1234567890,C0987654321]
 ```
 
 ### Finding Channel IDs
@@ -405,9 +453,27 @@ The Slack bot automatically uses threads to organize conversations:
 3. Check logs for any error messages
 
 ### Permission errors
-1. Ensure all required scopes are added
-2. Reinstall the app to workspace after adding scopes
+1. Ensure all required scopes are added (including `groups:read` for private channels)
+2. **Important**: After adding new scopes, you MUST reinstall the app to workspace:
+   - Go to **"OAuth & Permissions"** page
+   - Click **"Reinstall to Workspace"** button at the top
+   - Review and approve the new permissions
 3. Verify tokens are correctly set in `.env`
+
+### Private Channel Access Issues
+If you see `missing_scope` errors with `groups:read`:
+1. Add ALL private channel scopes: `groups:read`, `groups:history`, `groups:write`
+2. Click **"Reinstall to Workspace"** (this is mandatory!)
+3. Copy the new Bot Token and update your `.env` file
+4. Restart the bot
+5. Ensure bot is invited to the private channel: `/invite @YourBotName`
+
+### Thread Reply Issues
+If you see `cannot_reply_to_message` error:
+1. This usually means the bot is trying to reply to a message that doesn't exist or in wrong context
+2. Ensure the bot has `channels:history` or `groups:history` permission for the channel type
+3. Check that the message timestamp (thread_ts) is valid
+4. Verify the bot is a member of the channel where it's trying to reply
 
 ### Socket Mode issues
 1. Ensure `SLACK_APP_TOKEN` is set correctly

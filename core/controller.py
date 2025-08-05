@@ -53,8 +53,17 @@ class Controller:
         platform_name = self.config.platform.capitalize()
         
         # Get user and channel info
-        user_info = await self.im_client.get_user_info(context.user_id)
-        channel_info = await self.im_client.get_channel_info(context.channel_id)
+        try:
+            user_info = await self.im_client.get_user_info(context.user_id)
+        except Exception as e:
+            logger.warning(f"Failed to get user info: {e}")
+            user_info = {'id': context.user_id}
+        
+        try:
+            channel_info = await self.im_client.get_channel_info(context.channel_id)
+        except Exception as e:
+            logger.warning(f"Failed to get channel info: {e}")
+            channel_info = {'id': context.channel_id, 'name': 'Direct Message' if context.channel_id.startswith('D') else context.channel_id}
         
         # For non-Slack platforms, use traditional text message
         if self.config.platform != "slack":
@@ -283,11 +292,17 @@ Choose a command below or type any message to add it to the processing queue."""
             platform_specific=context.platform_specific
         )
         
-        # Override channel_id if target is configured
-        if self.config.platform == "telegram" and self.config.telegram and self.config.telegram.target_chat_id:
-            target_context.channel_id = str(self.config.telegram.target_chat_id)
-        elif self.config.platform == "slack" and self.config.slack and self.config.slack.target_channel:
-            target_context.channel_id = self.config.slack.target_channel
+        # Override channel_id if target is configured (only for single target scenarios)
+        if self.config.platform == "telegram" and self.config.telegram:
+            target_chat_id = self.config.telegram.target_chat_id
+            # Only override if it's a single ID (not a list)
+            if target_chat_id and not isinstance(target_chat_id, list):
+                target_context.channel_id = str(target_chat_id)
+        elif self.config.platform == "slack" and self.config.slack:
+            target_channel = self.config.slack.target_channel
+            # Only override if it's a single ID (not a list)
+            if target_channel and not isinstance(target_channel, list):
+                target_context.channel_id = target_channel
         
         return target_context
     

@@ -37,15 +37,20 @@ Set `IM_PLATFORM` in your `.env` file:
 ### Telegram Configuration
 
 - `TELEGRAM_BOT_TOKEN` (required): Your Telegram bot token from @BotFather
-- `TELEGRAM_TARGET_CHAT_ID` (optional): Specific chat ID to send all Claude Code outputs
+- `TELEGRAM_TARGET_CHAT_ID` (optional): Whitelist of allowed chat IDs
+  - Empty or `[]`: Only accept private messages (DMs)
+  - `null` or omit: Accept all chats
+  - `[123456789,987654321]`: Only accept messages from these chat IDs
   - Use `/start` command to get your chat ID
-  - If set, all outputs go to this chat regardless of where commands come from
 
 ### Slack Configuration
 
 - `SLACK_BOT_TOKEN` (required): Your Slack bot token (starts with `xoxb-`)
 - `SLACK_APP_TOKEN` (required for Socket Mode): App-level token (starts with `xapp-`)
-- `SLACK_TARGET_CHANNEL` (optional): Default channel for all outputs
+- `SLACK_TARGET_CHANNEL` (optional): Whitelist of allowed channel IDs
+  - Empty or `[]`: Only accept direct messages (DMs)
+  - `null` or omit: Accept all channels
+  - `[C1234567890,C0987654321]`: Only accept messages from these channel IDs
 
 For detailed Slack setup instructions, see [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md).
 

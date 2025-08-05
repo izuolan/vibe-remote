@@ -22,10 +22,18 @@ class TelegramBot(BaseIMClient):
         
     async def handle_telegram_message(self, update: Update, tg_context: ContextTypes.DEFAULT_TYPE):
         """Handle incoming text messages from Telegram"""
+        chat_id = update.effective_chat.id
+        chat_type = update.effective_chat.type
+        
+        # Check if message is authorized based on whitelist
+        if not self._is_authorized_chat(chat_id, chat_type):
+            # Silently ignore unauthorized messages
+            return
+        
         # Create MessageContext
         context = MessageContext(
             user_id=str(update.effective_user.id),
-            channel_id=str(update.effective_chat.id),
+            channel_id=str(chat_id),
             message_id=str(update.message.message_id),
             platform_specific={'update': update, 'tg_context': tg_context}
         )
@@ -64,6 +72,14 @@ class TelegramBot(BaseIMClient):
     async def _wrap_command(self, command_name: str, update: Update, tg_context: ContextTypes.DEFAULT_TYPE):
         """Wrap a command handler to convert Update to MessageContext"""
         if command_name not in self.on_command_callbacks:
+            return
+        
+        chat_id = update.effective_chat.id
+        chat_type = update.effective_chat.type
+        
+        # Check if command is authorized based on whitelist
+        if not self._is_authorized_chat(chat_id, chat_type):
+            # Silently ignore unauthorized commands
             return
             
         # Extract args
@@ -400,3 +416,23 @@ class TelegramBot(BaseIMClient):
         # Telegram uses standard markdown with double asterisks for bold
         # Just return the text as-is since it's already in the right format
         return text
+    
+    def _is_authorized_chat(self, chat_id: int, chat_type: str) -> bool:
+        """Check if a chat is authorized based on whitelist configuration"""
+        target_chat_id = self.config.target_chat_id
+        
+        # If None/null, accept all chats
+        if target_chat_id is None:
+            return True
+        
+        # If empty list, only accept private chats (DMs)
+        if isinstance(target_chat_id, list) and len(target_chat_id) == 0:
+            return chat_type == 'private'
+        
+        # If list with IDs, check whitelist
+        if isinstance(target_chat_id, list):
+            return chat_id in target_chat_id
+        
+        # Should not reach here, but handle gracefully
+        logger.warning(f"Unexpected target_chat_id type: {type(target_chat_id)}")
+        return True

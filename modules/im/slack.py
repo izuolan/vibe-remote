@@ -253,6 +253,11 @@ class SlackBot(BaseIMClient):
                 logger.info(f"Skipping message event with bot mention: '{text}'")
                 return
             
+            # Check if channel is authorized based on whitelist
+            if not await self._is_authorized_channel(channel_id):
+                logger.info(f"Ignoring message from unauthorized channel: {channel_id}")
+                return
+            
             # Check if we require mention in channels (not DMs)
             if self.config.require_mention and not channel_id.startswith('D'):
                 logger.info(f"Ignoring non-mention message in channel: '{text}'")
@@ -289,12 +294,10 @@ class SlackBot(BaseIMClient):
             # Handle @mentions
             channel_id = event.get("channel")
             
-            # Check if target_channel is configured and mention is not in that channel
-            if self.config.target_channel and channel_id != self.config.target_channel:
-                # Check if this is a DM (starts with 'D')
-                if not channel_id.startswith('D'):
-                    logger.info(f"Ignoring mention from non-target channel: {channel_id}")
-                    return
+            # Check if channel is authorized based on whitelist
+            if not await self._is_authorized_channel(channel_id):
+                logger.info(f"Ignoring mention from unauthorized channel: {channel_id}")
+                return
             
             context = MessageContext(
                 user_id=event.get("user"),
@@ -338,6 +341,16 @@ class SlackBot(BaseIMClient):
     async def _handle_slash_command(self, payload: Dict[str, Any]):
         """Handle native Slack slash commands"""
         command = payload.get("command", "").lstrip("/")
+        channel_id = payload.get("channel_id")
+        
+        # Check if channel is authorized based on whitelist
+        if not await self._is_authorized_channel(channel_id):
+            logger.info(f"Ignoring slash command from unauthorized channel: {channel_id}")
+            # Send a response to user about unauthorized channel
+            response_url = payload.get("response_url")
+            if response_url:
+                await self.send_slash_response(response_url, "❌ This channel is not authorized to use bot commands.")
+            return
         
         # Map Slack slash commands to internal commands
         command_mapping = {
@@ -699,3 +712,24 @@ class SlackBot(BaseIMClient):
         except Exception as e:
             logger.error(f"Error sending slash command response: {e}")
             return False
+    
+    async def _is_authorized_channel(self, channel_id: str) -> bool:
+        """Check if a channel is authorized based on whitelist configuration"""
+        target_channel = self.config.target_channel
+        
+        # If None/null, accept all channels
+        if target_channel is None:
+            return True
+        
+        # If empty list, only accept DMs
+        if isinstance(target_channel, list) and len(target_channel) == 0:
+            # In Slack, DMs start with 'D', group DMs with 'G'
+            return channel_id.startswith(('D', 'G'))
+        
+        # If list with IDs, check whitelist
+        if isinstance(target_channel, list):
+            return channel_id in target_channel
+        
+        # Should not reach here, but handle gracefully
+        logger.warning(f"Unexpected target_channel type: {type(target_channel)}")
+        return True
