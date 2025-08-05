@@ -22,8 +22,7 @@ class SlackBot(BaseIMClient):
         self.web_client = None
         self.socket_client = None
         
-        # Store thread timestamps for conversation continuity
-        self.thread_timestamps: Dict[str, str] = {}
+        # Note: Thread handling now uses user's message timestamp directly
         
         # Store callback handlers
         self.command_handlers: Dict[str, Callable] = {}
@@ -61,6 +60,9 @@ class SlackBot(BaseIMClient):
                 # Optionally broadcast to channel
                 if context.platform_specific and context.platform_specific.get('reply_broadcast'):
                     kwargs['reply_broadcast'] = True
+            elif reply_to:
+                # If reply_to is specified, use it as thread timestamp
+                kwargs['thread_ts'] = reply_to
             
             # Handle formatting
             if parse_mode == 'markdown':
@@ -68,11 +70,6 @@ class SlackBot(BaseIMClient):
             
             # Send message
             response = await self.web_client.chat_postMessage(**kwargs)
-            
-            # Store thread timestamp for future replies
-            if not context.thread_id and response['ts']:
-                thread_key = f"{context.channel_id}:{context.user_id}"
-                self.thread_timestamps[thread_key] = response['ts']
             
             return response['ts']
             
@@ -658,8 +655,8 @@ class SlackBot(BaseIMClient):
     
     async def get_or_create_thread(self, channel_id: str, user_id: str) -> Optional[str]:
         """Get existing thread timestamp or return None for new thread"""
-        thread_key = f"{channel_id}:{user_id}"
-        return self.thread_timestamps.get(thread_key)
+        # Deprecated: Thread handling now uses user's message timestamp directly
+        return None
     
     async def send_slash_response(self, response_url: str, text: str, 
                                  ephemeral: bool = True) -> bool:

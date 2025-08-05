@@ -135,24 +135,22 @@ Choose a command below or type any message to add it to the processing queue."""
             # Send confirmation reply immediately
             target_context = self._get_target_context(context)
             
-            # For Slack, establish thread with the confirmation message
+            # For Slack, use the user's message timestamp as thread
             confirmation_msg = None
-            if self.config.platform == "slack" and hasattr(self.im_client, 'get_or_create_thread'):
-                # Create thread if needed
-                thread_ts = await self.im_client.get_or_create_thread(
-                    target_context.channel_id, 
-                    target_context.user_id
-                )
-                if thread_ts:
-                    target_context.thread_id = thread_ts
+            if self.config.platform == "slack":
+                # Use the user's message timestamp as the thread ID
+                user_message_ts = context.message_id  # This is the timestamp of the user's message
+                if user_message_ts:
+                    target_context.thread_id = user_message_ts
                 
-                # Send confirmation with thread context
+                # Send confirmation as reply in the thread
                 confirmation_text = f"📝 *Received:* {message}\n⏳ *Processing...*"
                 formatted_confirmation = self.im_client.format_markdown(confirmation_text)
                 confirmation_msg = await self.im_client.send_message(
                     target_context,
                     formatted_confirmation,
-                    parse_mode='markdown'
+                    parse_mode='markdown',
+                    reply_to=user_message_ts  # Reply to the user's message
                 )
             else:
                 # For non-Slack platforms, just send confirmation
@@ -164,15 +162,15 @@ Choose a command below or type any message to add it to the processing queue."""
                     parse_mode='markdown'
                 )
             
-            # Store thread context with the message
-            thread_id = getattr(target_context, 'thread_id', None)
+            # Store thread context with the message (use user's message timestamp for Slack)
+            thread_id = user_message_ts if self.config.platform == "slack" and user_message_ts else None
             await self.session_manager.add_message_with_context(
                 context.user_id, 
                 context.channel_id, 
                 message,
                 thread_id=thread_id
             )
-            logger.info(f"User {context.user_id} added message to queue")
+            logger.info(f"User {context.user_id} added message to queue with thread_id: {thread_id}")
             
             # Check if not already executing, then start processing
             if not await self.session_manager.is_executing(context.user_id):
@@ -220,7 +218,12 @@ Choose a command below or type any message to add it to the processing queue."""
                         target_context.thread_id = thread_id
                     
                     formatted_msg = self.im_client.format_markdown(claude_msg)
-                    await self.im_client.send_message(target_context, formatted_msg, parse_mode='markdown')
+                    await self.im_client.send_message(
+                        target_context, 
+                        formatted_msg, 
+                        parse_mode='markdown',
+                        reply_to=thread_id if self.config.platform == "slack" else None
+                    )
                 
                 try:
                     await self.claude_client.stream_execute(message, on_claude_message, context.user_id)
@@ -234,12 +237,14 @@ Choose a command below or type any message to add it to the processing queue."""
                     if remaining:
                         await self.im_client.send_message(
                             target_context,
-                            "✅ Completed. Processing next message..."
+                            "✅ Completed. Processing next message...",
+                            reply_to=thread_id if self.config.platform == "slack" else None
                         )
                     else:
                         await self.im_client.send_message(
                             target_context,
-                            "✅ All messages processed!"
+                            "✅ All messages processed!",
+                            reply_to=thread_id if self.config.platform == "slack" else None
                         )
                         
                 except Exception as e:
@@ -249,7 +254,8 @@ Choose a command below or type any message to add it to the processing queue."""
                         self.claude_client.options.cwd = original_cwd
                     await self.im_client.send_message(
                         target_context,
-                        f"❌ Error processing message: {str(e)}\nStopping queue processing."
+                        f"❌ Error processing message: {str(e)}\nStopping queue processing.",
+                        reply_to=thread_id if self.config.platform == "slack" else None
                     )
                     break
                 
