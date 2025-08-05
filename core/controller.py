@@ -300,7 +300,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 # Check if this was a ResultMessage (query complete)
                 if message_type == "result":
                     # Mark session as not active
-                    session = await self.session_manager.get_session(context.user_id)
+                    session = await self.session_manager.get_or_create_session(context.user_id, context.channel_id)
                     if session:
                         session.session_active[session_id] = False
                     
@@ -915,6 +915,24 @@ _Tip: All commands work in DMs, channels, and threads!_"""
             except Exception as e:
                 logger.error(f"Error in periodic cleanup: {e}")
     
+    async def _initialize_sessions(self):
+        """Initialize and restore session mappings on startup"""
+        logger.info("Initializing session mappings from saved settings...")
+        
+        # The settings are already loaded by SettingsManager on init
+        # Log the loaded session mappings for debugging
+        restored_count = 0
+        
+        for user_id, user_settings in self.settings_manager.settings.items():
+            if user_settings.session_mappings:
+                logger.info(f"Found {len(user_settings.session_mappings)} session mappings for user {user_id}")
+                # Log each mapping for debugging
+                for im_session_id, claude_session_id in user_settings.session_mappings.items():
+                    logger.info(f"  - {im_session_id} -> {claude_session_id}")
+                    restored_count += 1
+        
+        logger.info(f"Session restoration complete. Restored {restored_count} session mappings.")
+    
     def run(self):
         """Run the controller"""
         logger.info(f"Starting Claude Proxy Controller with {self.config.platform} platform...")
@@ -922,6 +940,10 @@ _Tip: All commands work in DMs, channels, and threads!_"""
         # Start cleanup task
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        
+        # Initialize sessions before starting
+        loop.run_until_complete(self._initialize_sessions())
+        
         self.cleanup_task = loop.create_task(self.periodic_cleanup())
         
         # Run the IM client
