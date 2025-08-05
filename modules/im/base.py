@@ -100,6 +100,8 @@ class BaseIMClient(ABC):
         self.on_message_callback: Optional[Callable] = None
         self.on_command_callbacks: Dict[str, Callable] = {}
         self.on_callback_query_callback: Optional[Callable] = None
+        # Platform-specific formatter will be set by subclasses
+        self.formatter = None
         
     @abstractmethod
     async def send_message(self, context: MessageContext, text: str, 

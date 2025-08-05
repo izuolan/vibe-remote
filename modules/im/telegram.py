@@ -7,6 +7,7 @@ from telegram.helpers import escape_markdown
 from telegram.error import TelegramError
 from config.settings import TelegramConfig
 from .base import BaseIMClient, MessageContext, InlineKeyboard, InlineButton
+from .formatters import TelegramFormatter
 
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,9 @@ class TelegramBot(BaseIMClient):
     def __init__(self, config: TelegramConfig):
         super().__init__(config)
         self.application = Application.builder().token(config.bot_token).build()
+        
+        # Initialize Telegram formatter
+        self.formatter = TelegramFormatter()
         
         # Store callback queries for answering
         self._callback_queries: Dict[str, Any] = {}
@@ -258,7 +262,14 @@ class TelegramBot(BaseIMClient):
         }
         
         if parse_mode:
-            kwargs['parse_mode'] = parse_mode if parse_mode != 'markdown' else 'MarkdownV2'
+            # Handle different parse modes:
+            # 'markdown' (from Slack) -> 'Markdown' (Telegram v1)
+            # 'Markdown' -> keep as is (Telegram v1)
+            # 'MarkdownV2' -> keep as is (Telegram v2)
+            if parse_mode == 'markdown':
+                kwargs['parse_mode'] = 'Markdown'
+            else:
+                kwargs['parse_mode'] = parse_mode
             
         if reply_to or context.thread_id:
             kwargs['reply_to_message_id'] = int(reply_to or context.thread_id)
@@ -296,7 +307,7 @@ class TelegramBot(BaseIMClient):
             message = await bot.send_message(
                 chat_id=chat_id,
                 text=text,
-                parse_mode=parse_mode if parse_mode != 'markdown' else 'MarkdownV2',
+                parse_mode='Markdown' if parse_mode == 'markdown' else parse_mode,
                 reply_markup=reply_markup
             )
             return str(message.message_id)
@@ -420,13 +431,12 @@ class TelegramBot(BaseIMClient):
             raise
     
     def format_markdown(self, text: str) -> str:
-        """Format markdown text for Telegram
+        """Format markdown text for Telegram using TelegramFormatter
         
-        Telegram already uses double asterisks for bold, so we don't need to change much
+        This properly escapes special characters for MarkdownV2
         """
-        # Telegram uses standard markdown with double asterisks for bold
-        # Just return the text as-is since it's already in the right format
-        return text
+        # Use the formatter to properly escape text
+        return self.formatter.escape_special_chars(text)
     
     def _is_authorized_chat(self, chat_id: int, chat_type: str) -> bool:
         """Check if a chat is authorized based on whitelist configuration"""

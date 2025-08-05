@@ -9,6 +9,7 @@ from slack_sdk.errors import SlackApiError
 
 from .base import BaseIMClient, MessageContext, InlineKeyboard, InlineButton
 from config.settings import SlackConfig
+from .formatters import SlackFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,9 @@ class SlackBot(BaseIMClient):
         self.config = config
         self.web_client = None
         self.socket_client = None
+        
+        # Initialize Slack formatter
+        self.formatter = SlackFormatter()
         
         # Note: Thread handling now uses user's message timestamp directly
         
