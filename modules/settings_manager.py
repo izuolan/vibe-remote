@@ -14,6 +14,8 @@ class UserSettings:
     """User personalization settings"""
     hidden_message_types: List[str] = field(default_factory=list)  # Message types to hide
     custom_cwd: Optional[str] = None  # Custom working directory
+    # Map of IM session ID (chat_id/thread_id) to Claude session_id
+    session_mappings: Dict[str, str] = field(default_factory=dict)
     
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization"""
@@ -129,3 +131,23 @@ class SettingsManager:
             "assistant": "Assistant",
             "result": "Result"
         }
+    
+    def set_session_mapping(self, user_id: Union[int, str], im_session_id: str, claude_session_id: str):
+        """Store mapping between IM session ID and Claude session ID"""
+        settings = self.get_user_settings(user_id)
+        settings.session_mappings[im_session_id] = claude_session_id
+        self.update_user_settings(user_id, settings)
+        logger.info(f"Stored session mapping for user {user_id}: {im_session_id} -> {claude_session_id}")
+    
+    def get_claude_session_id(self, user_id: Union[int, str], im_session_id: str) -> Optional[str]:
+        """Get Claude session ID for given IM session ID"""
+        settings = self.get_user_settings(user_id)
+        return settings.session_mappings.get(im_session_id)
+    
+    def clear_session_mapping(self, user_id: Union[int, str], im_session_id: str):
+        """Clear session mapping for given IM session ID"""
+        settings = self.get_user_settings(user_id)
+        if im_session_id in settings.session_mappings:
+            del settings.session_mappings[im_session_id]
+            self.update_user_settings(user_id, settings)
+            logger.info(f"Cleared session mapping for user {user_id}: {im_session_id}")

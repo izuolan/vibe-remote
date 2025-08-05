@@ -6,8 +6,9 @@ from config.settings import AppConfig
 from modules.im import BaseIMClient, MessageContext, InlineKeyboard, InlineButton, IMFactory
 from modules.im.formatters import TelegramFormatter, SlackFormatter
 from modules.claude_client import ClaudeClient
-from modules.session_manager import SessionManager
+from modules.session_manager import SessionManager, UserSession
 from modules.settings_manager import SettingsManager
+from claude_code_sdk import ClaudeSDKClient, ClaudeCodeOptions
 
 
 logger = logging.getLogger(__name__)
@@ -44,12 +45,9 @@ class Controller:
         # Create command handlers dict
         self.command_handlers = {
             'start': self.handle_start,
-            'execute': self.handle_execute,
-            'status': self.handle_status,
             'clear': self.handle_clear,
             'cwd': self.handle_cwd,
             'set_cwd': self.handle_set_cwd,
-            'queue': self.handle_queue,
             'settings': self.handle_settings
         }
         
@@ -89,18 +87,17 @@ Channel/Chat ID: {context.channel_id}
 
 Commands:
 /start - Show this message
-/execute - Manually start processing queue
-/clear - Clear message queue
+/clear - Clear session and disconnect Claude
 /status - Show current status
-/queue - Show messages in queue
+/queue - Show session information
 /cwd - Show current working directory
 /set_cwd <path> - Set working directory
 /settings - Personalization settings
 
 How it works:
-• Send any message to add it to the queue
-• Messages are automatically processed in order
-• Claude Code executes each message sequentially"""
+• Send any message and it's immediately sent to Claude Code
+• Each chat maintains its own conversation context
+• Use /clear to reset the conversation"""
             
             await self.im_client.send_message(context, message_text)
             return
@@ -110,22 +107,17 @@ How it works:
         
         # Create interactive buttons for commands
         buttons = [
-            # Row 1: Queue operations
+            # Row 1: Directory management
             [
-                InlineButton(text="📊 Queue Status", callback_data="cmd_queue_status"),
-                InlineButton(text="🚀 Execute Queue", callback_data="cmd_execute")
+                InlineButton(text="📁 Current Dir", callback_data="cmd_cwd"),
+                InlineButton(text="📂 Change Work Dir", callback_data="cmd_change_cwd")
             ],
-            # Row 2: Queue management & Directory
+            # Row 2: Session and Settings
             [
-                InlineButton(text="🗑️ Clear Queue", callback_data="cmd_clear"),
-                InlineButton(text="📁 Current Dir", callback_data="cmd_cwd")
-            ],
-            # Row 3: Configuration
-            [
-                InlineButton(text="📂 Change Work Dir", callback_data="cmd_change_cwd"),
+                InlineButton(text="🔄 Reset Session", callback_data="cmd_clear"),
                 InlineButton(text="⚙️ Settings", callback_data="cmd_settings")
             ],
-            # Row 4: Help
+            # Row 3: Help
             [
                 InlineButton(text="ℹ️ How it Works", callback_data="info_how_it_works")
             ]
@@ -140,7 +132,7 @@ How it works:
 📍 Channel: **{channel_info.get('name', 'Unknown')}**
 
 **Quick Actions:**
-Use the buttons below to manage your Claude Code sessions, or simply type any message to add it to the processing queue."""
+Use the buttons below to manage your Claude Code sessions, or simply type any message to start chatting with Claude!"""
 
         target_context = self._get_target_context(context)
         # For Telegram, send with Markdown parse mode (not MarkdownV2)
@@ -186,121 +178,196 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                     parse_mode=parse_mode
                 )
             
-            # Store thread context with the message (use user's message timestamp for Slack)
+            # Determine session ID based on platform
             thread_id = user_message_ts if self.config.platform == "slack" and user_message_ts else None
-            await self.session_manager.add_message_with_context(
-                context.user_id, 
-                context.channel_id, 
-                message,
-                thread_id=thread_id
-            )
-            logger.info(f"User {context.user_id} added message to queue with thread_id: {thread_id}")
+            if self.config.platform == "telegram":
+                # For Telegram, use chat_id as session ID
+                session_id = f"telegram_{context.channel_id}"
+            elif self.config.platform == "slack" and thread_id:
+                # For Slack, use thread_id as session ID
+                session_id = f"slack_{thread_id}"
+            else:
+                # Fallback to user-based session
+                session_id = f"{self.config.platform}_{context.user_id}"
             
-            # Check if not already executing, then start processing
-            if not await self.session_manager.is_executing(context.user_id):
-                asyncio.create_task(self.process_user_queue(context))
+            # Get or create session
+            session = await self.session_manager.get_or_create_session(context.user_id, context.channel_id)
+            
+            # Check if we have a client for this session
+            if session_id not in session.claude_clients:
+                # Check if we have a saved Claude session_id to resume
+                claude_session_id = self.settings_manager.get_claude_session_id(context.user_id, session_id)
+                
+                # Create new Claude SDK client with resume if available
+                options = ClaudeCodeOptions(
+                    permission_mode=self.config.claude.permission_mode,
+                    cwd=self.config.claude.cwd,
+                    system_prompt=self.config.claude.system_prompt,
+                    # Use resume instead of continue_conversation
+                    resume=claude_session_id if claude_session_id else None
+                )
+                
+                client = ClaudeSDKClient(options=options)
+                await client.connect()
+                session.claude_clients[session_id] = client
+                
+                if claude_session_id:
+                    logger.info(f"Resumed Claude session {claude_session_id} for {session_id}")
+                else:
+                    logger.info(f"Created new Claude SDK client for session {session_id}")
+                
+                # Start persistent receiver for this session
+                receiver_task = asyncio.create_task(
+                    self._session_message_receiver(session_id, client, context, thread_id)
+                )
+                session.receiver_tasks[session_id] = receiver_task
+            
+            # Send message immediately to the session's client
+            await self.process_message_immediately(context, message, session_id, thread_id)
             
         except Exception as e:
             logger.error(f"Error handling message: {e}")
-            await self.im_client.send_message(context, "Error adding message to queue.")
+            await self.im_client.send_message(context, "Error processing message.")
     
-    async def process_user_queue(self, context: MessageContext):
-        """Process all messages in user's queue sequentially"""
+    async def _session_message_receiver(self, session_id: str, client: ClaudeSDKClient, context: MessageContext, thread_id: Optional[str]):
+        """Persistent message receiver for a session"""
         try:
-            # Mark as executing
-            await self.session_manager.set_executing(context.user_id, True)
-            
-            # Determine target context (use configured target channel/chat if available)
+            logger.info(f"Starting message receiver for session {session_id}")
             target_context = self._get_target_context(context)
+            if thread_id:
+                target_context.thread_id = thread_id
             
-            while await self.session_manager.has_messages(context.user_id):
-                # Get next message with context
-                message_data = await self.session_manager.get_next_message_with_context(context.user_id)
-                if not message_data:
-                    break
+            async for message in client.receive_messages():
+                # First check for SystemMessage init to capture session_id
+                if hasattr(message, "__class__") and message.__class__.__name__ == "SystemMessage":
+                    if hasattr(message, 'subtype') and message.subtype == 'init':
+                        if hasattr(message, 'data') and 'session_id' in message.data:
+                            claude_session_id = message.data['session_id']
+                            # Store the mapping
+                            self.settings_manager.set_session_mapping(
+                                context.user_id, 
+                                session_id,  # Our internal session ID (e.g., telegram_12345)
+                                claude_session_id  # Claude's actual session ID
+                            )
+                            logger.info(f"Captured Claude session_id: {claude_session_id} for {session_id}")
                 
-                message = message_data['message']
-                thread_id = message_data.get('thread_id')
+                if self.claude_client._is_skip_message(message):
+                    continue
                 
-                # Get user's CWD from settings if available
+                # Determine message type
+                message_type = None
+                if hasattr(message, "__class__"):
+                    class_name = message.__class__.__name__
+                    if class_name == "SystemMessage":
+                        message_type = "system"
+                    elif class_name == "UserMessage":
+                        message_type = "user"
+                    elif class_name == "AssistantMessage":
+                        message_type = "assistant"
+                    elif class_name == "ResultMessage":
+                        message_type = "result"
+                
+                # Check if this message type should be hidden
                 settings_key = self._get_settings_key(context)
-                custom_cwd = self.settings_manager.get_custom_cwd(settings_key)
-                original_cwd = self.claude_client.options.cwd
+                if message_type and self.settings_manager.is_message_type_hidden(settings_key, message_type):
+                    logger.info(f"Skipping {message_type} message for settings key {settings_key} (hidden in settings)")
+                    continue
                 
-                # Use custom CWD if set, otherwise fall back to config default
-                if custom_cwd:
-                    self.claude_client.options.cwd = custom_cwd
-                else:
-                    # Reset to config default in case it was changed before
-                    self.claude_client.options.cwd = self.config.claude.cwd
-                
-                # Execute with Claude
-                async def on_claude_message(claude_msg: str, message_type: str = None):
-                    # Check if this message type should be hidden
-                    settings_key = self._get_settings_key(context)
-                    if message_type and self.settings_manager.is_message_type_hidden(settings_key, message_type):
-                        logger.info(f"Skipping {message_type} message for settings key {settings_key} (hidden in settings)")
-                        return
-                    
-                    # Send Claude's formatted output
-                    # Use stored thread context if available
-                    if thread_id:
-                        target_context.thread_id = thread_id
-                    
-                    # Don't escape Claude messages - they already contain proper markdown
-                    # Use appropriate parse_mode for each platform
+                # Format and send message
+                formatted_message = self.claude_client.format_message(message)
+                if formatted_message and formatted_message.strip():
                     parse_mode = 'markdown' if self.config.platform == "slack" else 'Markdown'
                     await self.im_client.send_message(
-                        target_context, 
-                        claude_msg, 
+                        target_context,
+                        formatted_message,
                         parse_mode=parse_mode,
                         reply_to=thread_id if self.config.platform == "slack" else None
                     )
                 
-                try:
-                    await self.claude_client.stream_execute(message, on_claude_message, context.user_id)
-                    
-                    # Always restore original CWD
-                    self.claude_client.options.cwd = original_cwd
-                    
-                    # Check if there are more messages
-                    remaining = await self.session_manager.has_messages(context.user_id)
-                    if remaining:
-                        await self.im_client.send_message(
-                            target_context,
-                            "✅ Completed. Processing next message...",
-                            reply_to=thread_id if self.config.platform == "slack" else None
-                        )
-                    else:
-                        await self.im_client.send_message(
-                            target_context,
-                            "✅ All messages processed!",
-                            reply_to=thread_id if self.config.platform == "slack" else None
-                        )
-                        
-                except Exception as e:
-                    logger.error(f"Error during Claude execution: {e}")
-                    # Always restore original CWD
-                    self.claude_client.options.cwd = original_cwd
+                # Check if this was a ResultMessage (query complete)
+                if message_type == "result":
                     await self.im_client.send_message(
                         target_context,
-                        f"❌ Error processing message: {str(e)}\nStopping queue processing.",
+                        "✅ Ready for next message!",
                         reply_to=thread_id if self.config.platform == "slack" else None
                     )
-                    break
-                
-                # Small delay between messages
-                await asyncio.sleep(1)
-            
+                    
+        except asyncio.CancelledError:
+            logger.info(f"Message receiver for session {session_id} was cancelled")
+            raise
         except Exception as e:
-            logger.error(f"Error in process_user_queue: {e}")
+            logger.error(f"Error in message receiver for session {session_id}: {e}")
+            # Notify user of error
+            try:
+                await self.im_client.send_message(
+                    target_context,
+                    f"❌ Session error: {str(e)}\nPlease use /clear to reset.",
+                    reply_to=thread_id if self.config.platform == "slack" else None
+                )
+            except:
+                pass
+    
+    async def process_message_immediately(self, context: MessageContext, message: str, session_id: str, thread_id: Optional[str]):
+        """Send message to Claude immediately"""
+        try:
+            # Get session
+            session = await self.session_manager.get_or_create_session(context.user_id, context.channel_id)
+            
+            # Get user's CWD from settings if available
+            settings_key = self._get_settings_key(context)
+            custom_cwd = self.settings_manager.get_custom_cwd(settings_key)
+            
+            # Update Claude options with custom CWD
+            if custom_cwd:
+                self.claude_client.options.cwd = custom_cwd
+            else:
+                self.claude_client.options.cwd = self.config.claude.cwd
+            
+            # Get the client for this session
+            client = session.claude_clients[session_id]
+            
+            # Send the message to Claude
+            try:
+                await client.query(message, session_id=session_id)
+                logger.info(f"Sent message to Claude for session {session_id}")
+            except Exception as e:
+                logger.error(f"Error sending message to Claude: {e}")
+                
+                # Clean up broken session
+                await self._cleanup_session(session, session_id)
+                
+                # Notify user
+                target_context = self._get_target_context(context)
+                await self.im_client.send_message(
+                    target_context,
+                    f"❌ Error: {str(e)}\nPlease try again or use /clear to reset.",
+                    reply_to=thread_id if self.config.platform == "slack" else None
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in process_message_immediately: {e}")
             target_context = self._get_target_context(context)
             await self.im_client.send_message(
                 target_context,
                 f"❌ Unexpected error: {str(e)}"
             )
-        finally:
-            await self.session_manager.set_executing(context.user_id, False)
+    
+    async def _cleanup_session(self, session: UserSession, session_id: str) -> None:
+        """Clean up a broken Claude session"""
+        # Cancel receiver task if exists
+        if session_id in session.receiver_tasks:
+            session.receiver_tasks[session_id].cancel()
+            del session.receiver_tasks[session_id]
+            
+        # Disconnect and remove Claude client if exists
+        if session_id in session.claude_clients:
+            try:
+                await session.claude_clients[session_id].disconnect()
+            except Exception as e:
+                logger.error(f"Error disconnecting Claude client: {e}")
+            del session.claude_clients[session_id]
+            
+        logger.info(f"Cleaned up session {session_id}")
     
     def _get_target_context(self, context: MessageContext) -> MessageContext:
         """Get target context based on configuration"""
@@ -339,45 +406,32 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 # Fallback to user_id for backward compatibility
                 return int(context.user_id) if context.user_id else context.user_id
     
-    async def handle_execute(self, context: MessageContext, args: str = ""):
-        """Handle manual execute command"""
-        target_context = self._get_target_context(context)
-        
-        if await self.session_manager.is_executing(context.user_id):
-            await self.im_client.send_message(
-                target_context, 
-                "Already processing messages. Please wait..."
-            )
-            return
-        
-        if not await self.session_manager.has_messages(context.user_id):
-            await self.im_client.send_message(
-                target_context,
-                "No messages in queue."
-            )
-            return
-        
-        # Start processing
-        asyncio.create_task(self.process_user_queue(context))
-    
-    async def handle_status(self, context: MessageContext, args: str = ""):
-        """Handle status command"""
-        try:
-            status = await self.session_manager.get_status(context.user_id)
-            await self.im_client.send_message(context, status)
-        except Exception as e:
-            logger.error(f"Error getting status: {e}")
-            await self.im_client.send_message(context, "Error getting status.")
     
     async def handle_clear(self, context: MessageContext, args: str = ""):
-        """Handle clear command"""
+        """Handle clear command - now clears session and disconnects Claude client"""
         try:
-            response = await self.session_manager.clear_queue(context.user_id)
-            logger.info(f"User {context.user_id} cleared queue")
+            # Determine session ID to clear mapping
+            if self.config.platform == "telegram":
+                session_id = f"telegram_{context.channel_id}"
+            elif self.config.platform == "slack" and context.thread_id:
+                session_id = f"slack_{context.thread_id}"
+            else:
+                session_id = f"{self.config.platform}_{context.user_id}"
+            
+            # Clear session mapping
+            self.settings_manager.clear_session_mapping(context.user_id, session_id)
+            
+            # Clear session and disconnect clients
+            response = await self.session_manager.clear_session(context.user_id)
+            logger.info(f"User {context.user_id} cleared session")
+            
+            # Add reset message
+            response += "\n🔄 Claude session has been reset."
+            
             await self.im_client.send_message(context, response)
         except Exception as e:
-            logger.error(f"Error clearing queue: {e}")
-            await self.im_client.send_message(context, "Error clearing queue.")
+            logger.error(f"Error clearing session: {e}")
+            await self.im_client.send_message(context, "Error clearing session.")
     
     async def handle_cwd(self, context: MessageContext, args: str = ""):
         """Handle cwd command - show current working directory"""
@@ -464,30 +518,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             logger.error(f"Error setting cwd: {e}")
             await self.im_client.send_message(context, f"❌ Error setting working directory: {str(e)}")
     
-    async def handle_queue(self, context: MessageContext, args: str = ""):
-        """Handle queue command - show queue details"""
-        try:
-            response = await self.session_manager.get_queue_details(context.user_id)
-            logger.info(f"User {context.user_id} requested queue status")
-            await self.im_client.send_message(context, response)
-        except Exception as e:
-            logger.error(f"Error getting queue details: {e}")
-            await self.im_client.send_message(context, f"Error getting queue information: {str(e)}")
     
-    async def handle_queue_status(self, context: MessageContext):
-        """Handle combined queue status - merges status and queue details"""
-        try:
-            # Get both status and queue details
-            status = await self.session_manager.get_status(context.user_id)
-            queue_details = await self.session_manager.get_queue_details(context.user_id)
-            
-            # Combine the information
-            combined_info = f"{status}\n\n{queue_details}"
-            
-            await self.im_client.send_message(context, combined_info)
-        except Exception as e:
-            logger.error(f"Error getting queue status: {e}")
-            await self.im_client.send_message(context, f"Error getting queue status: {str(e)}")
     
     async def handle_change_cwd_modal(self, context: MessageContext):
         """Handle Change Work Dir button - open modal for Slack"""
@@ -644,10 +675,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 logger.info(f"Executing command via button click: {command}")
                 
                 # Handle special commands
-                if command == "queue_status":
-                    # Merge queue and status info
-                    await self.handle_queue_status(context)
-                elif command == "change_cwd":
+                if command == "change_cwd":
                     # Open modal for changing work directory
                     await self.handle_change_cwd_modal(context)
                 elif command in self.command_handlers:
@@ -664,14 +692,14 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                     info_text = """📚 *How Claude Code Bot Works:*
 
 🔄 *Message Processing:*
-• Send any message to add it to your personal queue
-• Messages are processed _automatically_ in order
+• Send any message and it's immediately processed by Claude Code
+• Conversations maintain context within the same chat/thread
 • Each message is sent to Claude Code for execution
 
-⚡ *Queue Management:*
-• Only *one message per user* is processed at a time
-• Use 🚀 Execute Queue to manually trigger processing
-• Use 🗑️ Clear Queue to remove all pending messages
+⚡ *Real-time Interaction:*
+• Messages are processed immediately as you send them
+• Claude Code maintains persistent sessions for continuous conversation
+• You can send multiple messages without waiting
 
 📁 *Directory Control:*
 • Use 📂 Change Work Dir button to set working directory
@@ -686,12 +714,6 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 elif callback_data == "info_all_commands":
                     info_text = """📖 *All Available Commands:*
 
-*📊 Status & Queue:*
-• `/status` or 📊 - Show current queue status
-• `/queue` or 📋 - Display all messages in queue  
-• `/execute` or 🚀 - Manually process queue
-• `/clear` or 🗑️ - Clear all queued messages
-
 *📁 Directory Management:*
 • `/cwd` or 📁 - Show current working directory
 • `/set_cwd <path>` - Change working directory
@@ -701,7 +723,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
 • `/start` - Show this welcome screen
 
 *💬 Three Ways to Use:*
-• *Direct commands*: Use slash commands like `/status`
+• *Direct commands*: Use slash commands like `/cwd`
 • *Button clicks*: Click buttons in this interface
 • *Natural messages*: Just type your request normally
 • *Channel mentions*: Type `@BotName your message here`

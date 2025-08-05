@@ -55,7 +55,6 @@ class TelegramConfig(BaseIMConfig):
 class ClaudeConfig:
     permission_mode: str
     cwd: str
-    continue_conversation: bool
     system_prompt: Optional[str] = None
     
     @classmethod
@@ -68,14 +67,9 @@ class ClaudeConfig:
         if not cwd:
             raise ValueError("CLAUDE_CWD environment variable is required")
         
-        continue_conversation_str = os.getenv("CLAUDE_CONTINUE_CONVERSATION")
-        if continue_conversation_str is None:
-            raise ValueError("CLAUDE_CONTINUE_CONVERSATION environment variable is required")
-        
         return cls(
             permission_mode=permission_mode,
             cwd=cwd,
-            continue_conversation=continue_conversation_str.lower() == "true",
             system_prompt=os.getenv("CLAUDE_SYSTEM_PROMPT")
         )
 

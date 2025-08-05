@@ -3,66 +3,63 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union, Any
 from datetime import datetime
+from claude_code_sdk import ClaudeSDKClient
 
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class MessageData:
-    message: str
-    thread_id: Optional[str] = None
 
 @dataclass
 class UserSession:
     user_id: Union[int, str]
     chat_id: Union[int, str]
-    message_queue: List[MessageData] = field(default_factory=list)
     is_executing: bool = False
     created_at: datetime = field(default_factory=datetime.now)
     last_activity: datetime = field(default_factory=datetime.now)
+    # Map of session_id to ClaudeSDKClient instance
+    claude_clients: Dict[str, ClaudeSDKClient] = field(default_factory=dict)
+    # Map of session_id to message receiver task
+    receiver_tasks: Dict[str, asyncio.Task] = field(default_factory=dict)
     
-    def add_message(self, message: str, thread_id: Optional[str] = None):
-        """Add message to queue"""
-        self.message_queue.append(MessageData(message=message, thread_id=thread_id))
-        self.last_activity = datetime.now()
     
-    
-    def get_next_message(self) -> Optional[Dict[str, Any]]:
-        """Get and remove the next message from queue"""
-        if self.message_queue:
-            message_data = self.message_queue.pop(0)
-            self.last_activity = datetime.now()
-            return {
-                'message': message_data.message,
-                'thread_id': message_data.thread_id
-            }
-        return None
-    
-    def clear_queue(self):
-        """Clear message queue"""
-        self.message_queue.clear()
-        self.last_activity = datetime.now()
+    async def cleanup_clients(self):
+        """Cleanup all Claude SDK clients and receiver tasks"""
+        # Cancel all receiver tasks first
+        for session_id, task in self.receiver_tasks.items():
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                logger.info(f"Cancelled receiver task for session {session_id}")
+        
+        # Then disconnect clients
+        for session_id, client in self.claude_clients.items():
+            try:
+                await client.disconnect()
+                logger.info(f"Disconnected Claude client for session {session_id}")
+            except Exception as e:
+                logger.error(f"Error disconnecting Claude client for session {session_id}: {e}")
+        
+        self.receiver_tasks.clear()
     
     def get_status(self) -> str:
         """Get session status summary"""
         status = f"📊 Session Status\n"
         status += f"━━━━━━━━━━━━━━━━\n"
         status += f"User ID: {self.user_id}\n"
-        status += f"Messages in queue: {len(self.message_queue)}\n"
-        status += f"Status: {'🟢 Processing' if self.is_executing else '⭕ Idle'}\n"
+        status += f"Active sessions: {len(self.claude_clients)}\n"
+        status += f"Status: {'🟢 Connected' if self.claude_clients else '⭕ No active session'}\n"
         status += f"Last activity: {self.last_activity.strftime('%Y-%m-%d %H:%M:%S')}"
         
-        if self.message_queue:
-            status += "\n\n📋 Queued messages:"
-            for idx, msg_data in enumerate(self.message_queue, 1):
-                msg = msg_data.message
-                preview = msg[:50] + "..." if len(msg) > 50 else msg
-                status += f"\n{idx}. {preview}"
-        elif self.is_executing:
-            status += "\n\n⏳ Currently processing your message..."
+        if self.claude_clients:
+            status += "\n\n🔗 Active Claude sessions:"
+            for session_id in self.claude_clients:
+                status += f"\n• {session_id}"
         else:
-            status += "\n\n💤 No messages in queue"
+            status += "\n\n💬 Send a message to start a conversation"
         
         return status
 
@@ -81,76 +78,21 @@ class SessionManager:
             
             return self.sessions[user_id]
     
-    async def add_message(self, user_id: Union[int, str], chat_id: Union[int, str], message: str) -> str:
-        """Add message to user's queue"""
-        session = await self.get_or_create_session(user_id, chat_id)
-        session.add_message(message)
-        
-        return f"Message added to queue. Total messages: {len(session.message_queue)}"
     
-    async def add_message_with_context(self, user_id: Union[int, str], chat_id: Union[int, str], 
-                                      message: str, thread_id: Optional[str] = None) -> str:
-        """Add message with thread context to user's queue"""
-        session = await self.get_or_create_session(user_id, chat_id)
-        session.add_message(message, thread_id=thread_id)
-        
-        return f"Message added to queue. Total messages: {len(session.message_queue)}"
-    
-    async def get_next_message(self, user_id: Union[int, str]) -> Optional[str]:
-        """Get next message from user's queue (legacy method)"""
-        message_data = await self.get_next_message_with_context(user_id)
-        return message_data['message'] if message_data else None
-    
-    async def get_next_message_with_context(self, user_id: Union[int, str]) -> Optional[Dict[str, Any]]:
-        """Get next message with thread context from user's queue"""
-        if user_id not in self.sessions:
-            return None
-        
-        session = self.sessions[user_id]
-        return session.get_next_message()
-    
-    async def has_messages(self, user_id: Union[int, str]) -> bool:
-        """Check if user has messages in queue"""
-        if user_id not in self.sessions:
-            return False
-        return len(self.sessions[user_id].message_queue) > 0
-    
-    async def get_queue_details(self, user_id: Union[int, str]) -> str:
-        """Get detailed queue information for user"""
-        if user_id not in self.sessions:
-            return "No active session. Send a message to start."
-        
-        session = self.sessions[user_id]
-        
-        if not session.message_queue:
-            if session.is_executing:
-                return "📋 Queue is empty\n⏳ Currently executing a message..."
-            else:
-                return "📋 Queue is empty\n💤 No messages to process"
-        
-        queue_info = f"📋 Message Queue ({len(session.message_queue)} messages)\n"
-        queue_info += f"Status: {'🟢 Processing' if session.is_executing else '⭕ Waiting'}\n\n"
-        
-        for idx, msg_data in enumerate(session.message_queue, 1):
-            # Show first 100 characters of each message
-            msg = msg_data.message
-            preview = msg[:100] + "..." if len(msg) > 100 else msg
-            # Replace newlines with spaces for better display
-            preview = preview.replace('\n', ' ').replace('\r', ' ')
-            queue_info += f"{idx}. {preview}\n"
-        
-        return queue_info
-    
-    async def clear_queue(self, user_id: Union[int, str]) -> str:
-        """Clear user's message queue"""
+    async def clear_session(self, user_id: Union[int, str]) -> str:
+        """Clear user's session and disconnect all Claude clients"""
         if user_id not in self.sessions:
             return "No active session found."
         
         session = self.sessions[user_id]
-        message_count = len(session.message_queue)
-        session.clear_queue()
         
-        return f"Cleared {message_count} messages from queue."
+        # Cleanup all Claude SDK clients and receiver tasks
+        client_count = len(session.claude_clients)
+        await session.cleanup_clients()
+        session.claude_clients.clear()
+        session.receiver_tasks.clear()
+        
+        return f"Cleared {client_count} active Claude session(s)."
     
     async def get_status(self, user_id: Union[int, str]) -> str:
         """Get user's session status"""
@@ -185,6 +127,9 @@ class SessionManager:
                     to_remove.append(user_id)
             
             for user_id in to_remove:
+                session = self.sessions[user_id]
+                # Cleanup Claude SDK clients before removing session
+                await session.cleanup_clients()
                 del self.sessions[user_id]
                 logger.info(f"Cleaned up inactive session for user {user_id}")
             

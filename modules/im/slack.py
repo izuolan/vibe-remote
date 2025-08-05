@@ -827,11 +827,6 @@ class SlackBot(BaseIMClient):
         if target_channel is None:
             return True
         
-        # If empty list, only accept DMs
-        if isinstance(target_channel, list) and len(target_channel) == 0:
-            # In Slack, DMs start with 'D', group DMs with 'G'
-            return channel_id.startswith(('D', 'G'))
-        
         # If list with IDs, check whitelist
         if isinstance(target_channel, list):
             return channel_id in target_channel
