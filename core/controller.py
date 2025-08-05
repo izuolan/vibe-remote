@@ -210,10 +210,14 @@ Choose a command below or type any message to add it to the processing queue."""
                 # Get user's CWD from settings if available
                 settings_key = self._get_settings_key(context)
                 custom_cwd = self.settings_manager.get_custom_cwd(settings_key)
+                original_cwd = self.claude_client.options.cwd
+                
+                # Use custom CWD if set, otherwise fall back to config default
                 if custom_cwd:
-                    # Temporarily set the CWD for this execution
-                    original_cwd = self.claude_client.options.cwd
                     self.claude_client.options.cwd = custom_cwd
+                else:
+                    # Reset to config default in case it was changed before
+                    self.claude_client.options.cwd = self.config.claude.cwd
                 
                 # Execute with Claude
                 async def on_claude_message(claude_msg: str, message_type: str = None):
@@ -239,9 +243,8 @@ Choose a command below or type any message to add it to the processing queue."""
                 try:
                     await self.claude_client.stream_execute(message, on_claude_message, context.user_id)
                     
-                    # Restore original CWD if it was changed
-                    if custom_cwd:
-                        self.claude_client.options.cwd = original_cwd
+                    # Always restore original CWD
+                    self.claude_client.options.cwd = original_cwd
                     
                     # Check if there are more messages
                     remaining = await self.session_manager.has_messages(context.user_id)
@@ -260,9 +263,8 @@ Choose a command below or type any message to add it to the processing queue."""
                         
                 except Exception as e:
                     logger.error(f"Error during Claude execution: {e}")
-                    # Restore original CWD if it was changed
-                    if custom_cwd:
-                        self.claude_client.options.cwd = original_cwd
+                    # Always restore original CWD
+                    self.claude_client.options.cwd = original_cwd
                     await self.im_client.send_message(
                         target_context,
                         f"❌ Error processing message: {str(e)}\nStopping queue processing.",
@@ -366,7 +368,7 @@ Choose a command below or type any message to add it to the processing queue."""
             # Check if user has custom CWD in settings
             settings_key = self._get_settings_key(context)
             custom_cwd = self.settings_manager.get_custom_cwd(settings_key)
-            current_cwd = custom_cwd if custom_cwd else self.claude_client.options.cwd
+            current_cwd = custom_cwd if custom_cwd else self.config.claude.cwd
             absolute_path = os.path.abspath(current_cwd)
             
             response_text = f"📁 Current Working Directory:\n{absolute_path}"
