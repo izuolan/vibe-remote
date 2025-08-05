@@ -77,6 +77,8 @@ class TelegramBot(BaseIMClient):
         query = update.callback_query
         chat_id = query.message.chat_id
         chat_type = query.message.chat.type
+        
+        logger.info(f"Telegram callback received: data='{query.data}', user={query.from_user.id}, chat={chat_id}")
 
         # Check if callback is authorized based on whitelist
         if not self._is_authorized_chat(chat_id, chat_type):
@@ -104,7 +106,17 @@ class TelegramBot(BaseIMClient):
         )
 
         if self.on_callback_query_callback:
+            logger.info(f"Calling on_callback_query_callback with data: {query.data}")
             await self.on_callback_query_callback(context, query.data)
+            logger.info(f"Finished on_callback_query_callback for data: {query.data}")
+        else:
+            logger.warning("No on_callback_query_callback registered!")
+        
+        # Always answer the callback to stop loading animation
+        try:
+            await query.answer()
+        except Exception as e:
+            logger.warning(f"Failed to answer callback query: {e}")
 
     async def _wrap_command(
         self, command_name: str, update: Update, tg_context: ContextTypes.DEFAULT_TYPE
@@ -141,9 +153,16 @@ class TelegramBot(BaseIMClient):
         """Setup bot command and message handlers"""
         # Register command handlers dynamically
         for command in self.on_command_callbacks:
-            handler = lambda update, context, cmd=command: asyncio.create_task(
-                self._wrap_command(cmd, update, context)
-            )
+            async def handler(update, context, cmd=command):
+                try:
+                    await self._wrap_command(cmd, update, context)
+                except Exception as e:
+                    logger.error(f"Error in command handler {cmd}: {e}", exc_info=True)
+                    try:
+                        await update.message.reply_text(f"❌ Error processing command: {str(e)}")
+                    except Exception as reply_error:
+                        logger.error(f"Failed to send error reply: {reply_error}")
+            
             self.application.add_handler(CommandHandler(command, handler))
 
         # Register callback query handler

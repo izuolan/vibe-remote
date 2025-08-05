@@ -443,20 +443,32 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             else:
                 session_id = f"{self.config.platform}_{context.user_id}"
             
-            # Clear session mapping
-            self.settings_manager.clear_session_mapping(context.user_id, session_id)
+            # Clear all session mappings for Slack (since we clear all sessions)
+            if self.config.platform == "slack":
+                user_settings = self.settings_manager.get_user_settings(context.user_id)
+                for mapping_id in list(user_settings.session_mappings.keys()):
+                    self.settings_manager.clear_session_mapping(context.user_id, mapping_id)
+            else:
+                # For other platforms, clear specific session mapping
+                self.settings_manager.clear_session_mapping(context.user_id, session_id)
             
             # Clear session and disconnect clients
             response = await self.session_manager.clear_session(context.user_id)
             logger.info(f"User {context.user_id} cleared session")
             
             # Add reset message
-            response += "\n🔄 Claude session has been reset."
+            full_response = f"{response}\n🔄 Claude session has been reset."
             
-            await self.im_client.send_message(context, response)
+            # Send the complete response
+            await self.im_client.send_message(context, full_response)
+            logger.info(f"Sent clear response to user {context.user_id}")
+            
         except Exception as e:
-            logger.error(f"Error clearing session: {e}")
-            await self.im_client.send_message(context, "Error clearing session.")
+            logger.error(f"Error clearing session: {e}", exc_info=True)
+            try:
+                await self.im_client.send_message(context, f"❌ Error clearing session: {str(e)}")
+            except Exception as send_error:
+                logger.error(f"Failed to send error message: {send_error}", exc_info=True)
     
     async def handle_cwd(self, context: MessageContext, args: str = ""):
         """Handle cwd command - show current working directory"""
@@ -675,6 +687,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
     
     async def handle_callback_query(self, context: MessageContext, callback_data: str):
         """Handle inline keyboard callbacks"""
+        logger.info(f"handle_callback_query called with data: {callback_data} for user {context.user_id}")
         try:
             # Handle settings modal open request (Slack)
             if callback_data == "open_settings_modal" and self.config.platform == "slack":
@@ -755,12 +768,12 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
 
 _Tip: All commands work in DMs, channels, and threads!_"""
                 
-                parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
-                await self.im_client.send_message(context, info_text, parse_mode=parse_mode)
-                return
+                    parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
+                    await self.im_client.send_message(context, info_text, parse_mode=parse_mode)
+                    return
             
             # Handle settings toggle buttons (existing functionality)
-            elif callback_data.startswith("toggle_msg_"):
+            if callback_data.startswith("toggle_msg_"):
                 # Toggle message type visibility
                 msg_type = callback_data.replace("toggle_msg_", "")
                 settings_key = self._get_settings_key(context)
@@ -772,8 +785,9 @@ _Tip: All commands work in DMs, channels, and threads!_"""
                 display_names = self.settings_manager.get_message_type_display_names()
                 
                 buttons = []
+                row = []
                 
-                for mt in message_types:
+                for i, mt in enumerate(message_types):
                     is_hidden_now = mt in user_settings.hidden_message_types
                     checkbox = "☑️" if is_hidden_now else "⬜"
                     display_name = display_names.get(mt, mt)
@@ -781,7 +795,12 @@ _Tip: All commands work in DMs, channels, and threads!_"""
                         text=f"{checkbox} Hide {display_name}",
                         callback_data=f"toggle_msg_{mt}"
                     )
-                    buttons.append([button])
+                    row.append(button)
+                    
+                    # Create 2x2 layout
+                    if len(row) == 2 or i == len(message_types) - 1:
+                        buttons.append(row)
+                        row = []
                 
                 buttons.append([InlineButton("ℹ️ About Message Types", callback_data="info_msg_types")])
                 
@@ -814,25 +833,33 @@ _Tip: All commands work in DMs, channels, and threads!_"""
                 
             elif callback_data == "info_msg_types":
                 # Show info about message types
-                formatter = self.im_client.formatter
+                logger.info(f"Handling info_msg_types callback for user {context.user_id}")
                 
-                # Build info text using formatter to handle escaping properly
-                lines = [
-                    f"📋 {formatter.format_bold('Message Types Info:')}",
-                    "",
-                    f"• {formatter.format_bold('System')} - System initialization and status messages",
-                    f"• {formatter.format_bold('Response')} - Tool execution responses and results",
-                    f"• {formatter.format_bold('Assistant')} - Claude's messages and explanations",
-                    f"• {formatter.format_bold('Result')} - Final execution results and summaries",
-                    "",
-                    "Hidden messages won't be sent to your IM platform."
-                ]
-                
-                info_text = "\n".join(lines)
-                
-                # Send as new message
-                parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
-                await self.im_client.send_message(context, info_text, parse_mode=parse_mode)
+                try:
+                    formatter = self.im_client.formatter
+                    
+                    # Build info text using formatter to handle escaping properly
+                    lines = [
+                        f"📋 {formatter.format_bold('Message Types Info:')}",
+                        "",
+                        f"• {formatter.format_bold('System')} - System initialization and status messages",
+                        f"• {formatter.format_bold('Response')} - Tool execution responses and results",
+                        f"• {formatter.format_bold('Assistant')} - Claude's messages and explanations",
+                        f"• {formatter.format_bold('Result')} - Final execution results and summaries",
+                        "",
+                        "Hidden messages won't be sent to your IM platform."
+                    ]
+                    
+                    info_text = "\n".join(lines)
+                    
+                    # Send as new message
+                    parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
+                    await self.im_client.send_message(context, info_text, parse_mode=parse_mode)
+                    logger.info(f"Sent info_msg_types message to user {context.user_id}")
+                    
+                except Exception as e:
+                    logger.error(f"Error in info_msg_types handler: {e}", exc_info=True)
+                    await self.im_client.send_message(context, "❌ Error showing message types info")
                 
         except Exception as e:
             logger.error(f"Error handling callback query: {e}")
