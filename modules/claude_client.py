@@ -1,5 +1,5 @@
 import logging
-from typing import Callable
+from typing import Callable, Optional
 from claude_code_sdk import (
     query,
     ClaudeCodeOptions,
@@ -11,16 +11,17 @@ from claude_code_sdk import (
     ToolUseBlock,
     ToolResultBlock,
 )
-from telegram.helpers import escape_markdown
 from config import ClaudeConfig
+from modules.im.formatters import BaseMarkdownFormatter, TelegramFormatter
 
 
 logger = logging.getLogger(__name__)
 
 
 class ClaudeClient:
-    def __init__(self, config: ClaudeConfig):
+    def __init__(self, config: ClaudeConfig, formatter: Optional[BaseMarkdownFormatter] = None):
         self.config = config
+        self.formatter = formatter or TelegramFormatter()  # Default to Telegram for backward compatibility
         self.options = ClaudeCodeOptions(
             permission_mode=config.permission_mode,
             cwd=config.cwd,
@@ -40,12 +41,12 @@ class ClaudeClient:
             elif isinstance(message, ResultMessage):
                 return self._format_result_message(message)
             else:
-                return escape_markdown(
-                    f"🤔 Unknown message type: {type(message)}", version=2
+                return self.formatter.format_warning(
+                    f"Unknown message type: {type(message)}"
                 )
         except Exception as e:
             logger.error(f"Error formatting message: {e}")
-            return escape_markdown(f"❌ Error formatting message: {str(e)}", version=2)
+            return self.formatter.format_error(f"Error formatting message: {str(e)}")
 
     def _process_content_blocks(self, content_blocks) -> list:
         """Process content blocks (TextBlock, ToolUseBlock) and return formatted parts"""
@@ -53,8 +54,8 @@ class ClaudeClient:
 
         for block in content_blocks:
             if isinstance(block, TextBlock):
-                # Escape text content for MarkdownV2
-                escaped_text = escape_markdown(block.text, version=2)
+                # Escape text content using formatter
+                escaped_text = self.formatter.escape_special_chars(block.text)
                 formatted_parts.append(escaped_text)
             elif isinstance(block, ToolUseBlock):
                 tool_info = self._format_tool_use_block(block)
@@ -93,7 +94,7 @@ class ClaudeClient:
 
     def _format_tool_use_block(self, block: ToolUseBlock) -> str:
         """Format ToolUseBlock with specific adaptations for different tools"""
-        escaped_name = escape_markdown(block.name, version=2)
+        escaped_name = self.formatter.escape_special_chars(block.name)
 
         # Get tool emoji and format based on tool type
         if block.name.startswith("mcp__"):
@@ -107,7 +108,7 @@ class ClaudeClient:
                 "human": "👤",
             }
             emoji = emoji_map.get(tool_category, "🔧")
-            tool_info = f"{emoji} *MCP Tool*: `{escaped_name}`"
+            tool_info = f"{emoji} {self.formatter.format_bold('MCP Tool')}: {self.formatter.format_code_inline(block.name)}"
         else:
             # System tools - specific handling
             tool_emoji_map = {
@@ -128,7 +129,7 @@ class ClaudeClient:
                 "ExitPlanMode": "🚪",
             }
             emoji = tool_emoji_map.get(block.name, "🔧")
-            tool_info = f"{emoji} *Tool*: `{escaped_name}`"
+            tool_info = f"{emoji} {self.formatter.format_bold('Tool')}: {self.formatter.format_code_inline(block.name)}"
 
         # Add specific input info based on tool type
         input_info = []
@@ -136,75 +137,53 @@ class ClaudeClient:
         # File operations
         if "file_path" in block.input and block.input["file_path"]:
             relative_path = self._get_relative_path(block.input["file_path"])
-            escaped_path = escape_markdown(relative_path, version=2)
-            input_info.append(f"📁 File: `{escaped_path}`")
+            input_info.append(self.formatter.format_file_path(relative_path))
 
         # Path operations (for LS, Glob, etc.)
         if "path" in block.input and block.input["path"]:
             relative_path = self._get_relative_path(block.input["path"])
-            escaped_path = escape_markdown(relative_path, version=2)
-            input_info.append(f"📂 Path: `{escaped_path}`")
+            input_info.append(self.formatter.format_file_path(relative_path, emoji="📂"))
 
         # Command operations
         if "command" in block.input and block.input["command"]:
             cmd = block.input["command"]
-            # For multi-line commands, use code block
-            if "\n" in cmd or len(cmd) > 80:
-                input_info.append(f"💻 Command:\n```bash\n{cmd}\n```")
-            else:
-                escaped_cmd = escape_markdown(cmd, version=2)
-                input_info.append(f"💻 Command: `{escaped_cmd}`")
+            input_info.append(self.formatter.format_command(cmd))
 
         # Description (for Bash tool)
         if "description" in block.input and block.input["description"]:
             desc = block.input["description"]
-            input_info.append(f"📝 Description: `{escape_markdown(desc, version=2)}`")
+            input_info.append(f"📝 Description: {self.formatter.format_code_inline(desc)}")
 
         # Pattern/Query operations
         if "pattern" in block.input and block.input["pattern"]:
-            escaped_pattern = escape_markdown(block.input["pattern"], version=2)
-            input_info.append(f"🔍 Pattern: `{escaped_pattern}`")
+            input_info.append(f"🔍 Pattern: {self.formatter.format_code_inline(block.input['pattern'])}")
 
         if "query" in block.input and block.input["query"]:
             query_str = str(block.input["query"])
-            if len(query_str) > 50:
-                escaped_query = escape_markdown(query_str[:50], version=2) + "\\.\\.\\."
-            else:
-                escaped_query = escape_markdown(query_str, version=2)
-            input_info.append(f"🔍 Query: `{escaped_query}`")
+            truncated_query = self.formatter.truncate_text(query_str, 50)
+            input_info.append(f"🔍 Query: {self.formatter.format_code_inline(truncated_query)}")
 
         # WebFetch specific parameters
         if "url" in block.input and block.input["url"]:
             url_str = str(block.input["url"])
-            escaped_url = escape_markdown(url_str, version=2)
-            input_info.append(f"🌐 URL: `{escaped_url}`")
+            input_info.append(f"🌐 URL: {self.formatter.format_code_inline(url_str)}")
 
         if "prompt" in block.input and block.input["prompt"]:
             prompt_str = str(block.input["prompt"])
-            if len(prompt_str) > 100:
-                escaped_prompt = (
-                    escape_markdown(prompt_str[:100], version=2) + "\\.\\.\\."
-                )
-            else:
-                escaped_prompt = escape_markdown(prompt_str, version=2)
+            truncated_prompt = self.formatter.truncate_text(prompt_str, 100)
+            escaped_prompt = self.formatter.escape_special_chars(truncated_prompt)
             input_info.append(f"📝 Prompt: {escaped_prompt}")
 
         # Edit/MultiEdit specific parameters
         if "old_string" in block.input and block.input["old_string"]:
             old_str = str(block.input["old_string"])
-            if len(old_str) > 50:
-                escaped_old = escape_markdown(old_str[:50], version=2) + "\\.\\.\\."
-            else:
-                escaped_old = escape_markdown(old_str, version=2)
-            input_info.append(f"🔍 Old: `{escaped_old}`")
+            truncated_old = self.formatter.truncate_text(old_str, 50)
+            input_info.append(f"🔍 Old: {self.formatter.format_code_inline(truncated_old)}")
 
         if "new_string" in block.input and block.input["new_string"]:
             new_str = str(block.input["new_string"])
-            if len(new_str) > 50:
-                escaped_new = escape_markdown(new_str[:50], version=2) + "\\.\\.\\."
-            else:
-                escaped_new = escape_markdown(new_str, version=2)
-            input_info.append(f"✏️ New: `{escaped_new}`")
+            truncated_new = self.formatter.truncate_text(new_str, 50)
+            input_info.append(f"✏️ New: {self.formatter.format_code_inline(truncated_new)}")
 
         # MultiEdit edits array
         if "edits" in block.input and block.input["edits"]:
@@ -220,29 +199,23 @@ class ClaudeClient:
 
         # Task tool parameters
         if "subagent_type" in block.input and block.input["subagent_type"]:
-            escaped_agent = escape_markdown(
-                str(block.input["subagent_type"]), version=2
-            )
-            input_info.append(f"🤖 Agent: `{escaped_agent}`")
+            agent_type = str(block.input["subagent_type"])
+            input_info.append(f"🤖 Agent: {self.formatter.format_code_inline(agent_type)}")
 
         if "plan" in block.input and block.input["plan"]:
             plan_str = str(block.input["plan"])
-            if len(plan_str) > 100:
-                escaped_plan = escape_markdown(plan_str[:100], version=2) + "\\.\\.\\."
-            else:
-                escaped_plan = escape_markdown(plan_str, version=2)
+            truncated_plan = self.formatter.truncate_text(plan_str, 100)
+            escaped_plan = self.formatter.escape_special_chars(truncated_plan)
             input_info.append(f"📋 Plan: {escaped_plan}")
 
         # NotebookEdit parameters
         if "cell_id" in block.input and block.input["cell_id"]:
-            escaped_cell_id = escape_markdown(str(block.input["cell_id"]), version=2)
-            input_info.append(f"📊 Cell ID: `{escaped_cell_id}`")
+            cell_id = str(block.input["cell_id"])
+            input_info.append(f"📊 Cell ID: {self.formatter.format_code_inline(cell_id)}")
 
         if "cell_type" in block.input and block.input["cell_type"]:
-            escaped_cell_type = escape_markdown(
-                str(block.input["cell_type"]), version=2
-            )
-            input_info.append(f"📝 Cell Type: `{escaped_cell_type}`")
+            cell_type = str(block.input["cell_type"])
+            input_info.append(f"📝 Cell Type: {self.formatter.format_code_inline(cell_type)}")
 
         # WebSearch parameters
         if "allowed_domains" in block.input and block.input["allowed_domains"]:
@@ -255,16 +228,16 @@ class ClaudeClient:
 
         # Grep parameters
         if "glob" in block.input and block.input["glob"]:
-            escaped_glob = escape_markdown(str(block.input["glob"]), version=2)
-            input_info.append(f"🎯 Glob: `{escaped_glob}`")
+            glob_pattern = str(block.input["glob"])
+            input_info.append(f"🎯 Glob: {self.formatter.format_code_inline(glob_pattern)}")
 
         if "type" in block.input and block.input["type"]:
-            escaped_type = escape_markdown(str(block.input["type"]), version=2)
-            input_info.append(f"📄 Type: `{escaped_type}`")
+            type_str = str(block.input["type"])
+            input_info.append(f"📄 Type: {self.formatter.format_code_inline(type_str)}")
 
         if "output_mode" in block.input and block.input["output_mode"]:
-            escaped_mode = escape_markdown(str(block.input["output_mode"]), version=2)
-            input_info.append(f"📊 Output mode: `{escaped_mode}`")
+            mode = str(block.input["output_mode"])
+            input_info.append(f"📊 Output mode: {self.formatter.format_code_inline(mode)}")
 
         if input_info:
             tool_info += "\n" + "\n".join(input_info)
@@ -311,15 +284,15 @@ class ClaudeClient:
                     if len(todo.get("content", "")) > 50:
                         content += "..."
 
-                    # Add strikethrough for completed items using MarkdownV2 format
+                    # Add strikethrough for completed items
                     if status == "completed":
-                        # Use MarkdownV2 strikethrough format: ~text~
-                        escaped_content = f"~{escape_markdown(content, version=2)}~"
+                        # Use formatter's strikethrough method
+                        formatted_content = self.formatter.format_strikethrough(content)
                         tool_info += (
-                            f"\n• {status_emoji} {priority_emoji} {escaped_content}"
+                            f"\n• {status_emoji} {priority_emoji} {formatted_content}"
                         )
                     else:
-                        escaped_content = escape_markdown(content, version=2)
+                        escaped_content = self.formatter.escape_special_chars(content)
                         tool_info += (
                             f"\n• {status_emoji} {priority_emoji} {escaped_content}"
                         )
@@ -332,17 +305,17 @@ class ClaudeClient:
             content = str(block.input["content"])
             if len(content) > 300:
                 content = content[:300] + "..."
-            tool_info += f"\n```\n{content}\n```"
+            tool_info += f"\n{self.formatter.format_code_block(content)}"
         elif show_json and block.input and len(str(block.input)) < 200:
             # Show short input as JSON for tools that need it
             import json
 
             try:
                 input_json = json.dumps(block.input, indent=2, ensure_ascii=False)
-                tool_info += f"\n```json\n{input_json}\n```"
+                tool_info += f"\n{self.formatter.format_code_block(input_json, 'json')}"
             except:
                 # Fallback for non-serializable input
-                tool_info += f"\n```\n{str(block.input)}\n```"
+                tool_info += f"\n{self.formatter.format_code_block(str(block.input))}"
 
         return tool_info
 
@@ -361,9 +334,7 @@ class ClaudeClient:
             if len(block.tool_use_id) > 8
             else block.tool_use_id
         )
-        escaped_tool_id = escape_markdown(tool_id, version=2)
-
-        result_info = f"{emoji} *Tool Result*"
+        result_info = f"{emoji} {self.formatter.format_bold('Tool Result')}"
 
         # Format content in code block
         if block.content:
@@ -371,27 +342,33 @@ class ClaudeClient:
             if len(content) > 500:
                 # Truncate very long content
                 content = content[:500] + "..."
-            result_info += f"\n```\n{content}\n```"
+            result_info += f"\n{self.formatter.format_code_block(content)}"
 
         return result_info
 
     def _format_system_message(self, message: SystemMessage) -> str:
         """Format SystemMessage"""
         cwd = message.data.get("cwd", "Unknown")
-        escaped_cwd = escape_markdown(cwd, version=2)
-        escaped_subtype = escape_markdown(message.subtype, version=2)
-        return f"🔧 *System {escaped_subtype}*\n📁 Working directory: `{escaped_cwd}`\n✨ Ready to work\\!"
+        subtype = message.subtype
+        
+        header = self.formatter.format_section_header(f"System {subtype}", "🔧")
+        cwd_line = self.formatter.format_file_path(cwd, emoji="📁").replace("File:", "Working directory:")
+        ready_line = f"✨ {self.formatter.escape_special_chars('Ready to work!')}"
+        
+        return f"{header}\n{cwd_line}\n{ready_line}"
 
     def _format_assistant_message(self, message: AssistantMessage) -> str:
         """Format AssistantMessage"""
-        formatted_parts = ["🤖 *Assistant*"]
+        header = self.formatter.format_section_header("Assistant", "🤖")
+        formatted_parts = [header]
         content_parts = self._process_content_blocks(message.content)
         formatted_parts.extend(content_parts)
         return "\n\n".join(formatted_parts)
 
     def _format_user_message(self, message: UserMessage) -> str:
         """Format UserMessage"""
-        formatted_parts = ["👤 *Response*"]
+        header = self.formatter.format_section_header("Response", "👤")
+        formatted_parts = [header]
         content_parts = self._process_content_blocks(message.content)
         formatted_parts.extend(content_parts)
         return "\n\n".join(formatted_parts)
@@ -408,9 +385,11 @@ class ClaudeClient:
         else:
             duration_str = f"{seconds}s"
 
-        # Don't escape for Result messages - they will be handled by smart formatting
-        result_text = f"📊 **Result ({message.subtype})**\n"
-        result_text += f"⏱️ Duration: {duration_str}\n"
+        # Format result header
+        header = self.formatter.format_section_header(f"Result ({message.subtype})", "📊")
+        duration_line = self.formatter.format_key_value("⏱️ Duration", duration_str)
+        
+        result_text = f"{header}\n{duration_line}\n"
 
         if message.result:
             result_text += f"\n{message.result}\n"

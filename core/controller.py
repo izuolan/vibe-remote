@@ -4,6 +4,7 @@ import os
 from typing import Optional, Union
 from config.settings import AppConfig
 from modules.im import BaseIMClient, MessageContext, InlineKeyboard, InlineButton, IMFactory
+from modules.im.formatters import TelegramFormatter, SlackFormatter
 from modules.claude_client import ClaudeClient
 from modules.session_manager import SessionManager
 from modules.settings_manager import SettingsManager
@@ -16,7 +17,19 @@ class Controller:
     def __init__(self, config: AppConfig):
         self.config = config
         self.im_client: BaseIMClient = IMFactory.create_client(config)
-        self.claude_client = ClaudeClient(config.claude)
+        
+        # Create platform-specific formatter
+        if config.platform == "telegram":
+            formatter = TelegramFormatter()
+        elif config.platform == "slack":
+            formatter = SlackFormatter()
+        else:
+            # Default to Telegram formatter for unknown platforms
+            logger.warning(f"Unknown platform: {config.platform}, using Telegram formatter")
+            formatter = TelegramFormatter()
+        
+        # Inject formatter into ClaudeClient
+        self.claude_client = ClaudeClient(config.claude, formatter)
         self.session_manager = SessionManager()
         self.settings_manager = SettingsManager()
         
