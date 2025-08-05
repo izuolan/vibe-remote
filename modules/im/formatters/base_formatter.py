@@ -119,13 +119,19 @@ class BaseMarkdownFormatter(ABC):
         return text[:max_length] + suffix
     
     # Claude message formatting methods
-    def format_system_message(self, cwd: str, subtype: str) -> str:
+    def format_system_message(self, cwd: str, subtype: str, session_id: Optional[str] = None) -> str:
         """Format system message"""
         header = self.format_section_header(f"System {subtype}", "🔧")
         cwd_line = self.format_file_path(cwd, emoji="📁").replace("File:", "Working directory:")
-        ready_line = f"✨ {self.escape_special_chars('Ready to work!')}"
         
-        return f"{header}\n{cwd_line}\n{ready_line}"
+        # Add session ID if available
+        if session_id:
+            session_line = f"🔗 Session ID: {self.format_code_inline(session_id)}"
+            ready_line = f"✨ {self.escape_special_chars('Ready to work!')}"
+            return f"{header}\n{cwd_line}\n{session_line}\n{ready_line}"
+        else:
+            ready_line = f"✨ {self.escape_special_chars('Ready to work!')}"
+            return f"{header}\n{cwd_line}\n{ready_line}"
     
     def format_assistant_message(self, content_parts: List[str]) -> str:
         """Format assistant message"""

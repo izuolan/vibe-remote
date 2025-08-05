@@ -107,7 +107,8 @@ class ClaudeClient:
     def _format_system_message(self, message: SystemMessage) -> str:
         """Format SystemMessage using formatter"""
         cwd = message.data.get("cwd", "Unknown")
-        return self.formatter.format_system_message(cwd, message.subtype)
+        session_id = message.data.get("session_id", None)
+        return self.formatter.format_system_message(cwd, message.subtype, session_id)
 
     def _format_assistant_message(self, message: AssistantMessage) -> str:
         """Format AssistantMessage using formatter"""

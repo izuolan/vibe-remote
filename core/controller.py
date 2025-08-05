@@ -87,9 +87,7 @@ Channel/Chat ID: {context.channel_id}
 
 Commands:
 /start - Show this message
-/clear - Clear session and disconnect Claude
-/status - Show current status
-/queue - Show session information
+/clear - Reset session and start fresh
 /cwd - Show current working directory
 /set_cwd <path> - Set working directory
 /settings - Personalization settings
@@ -148,50 +146,60 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
     async def handle_user_message(self, context: MessageContext, message: str):
         """Handle incoming user message"""
         try:
-            # Send confirmation reply immediately
-            target_context = self._get_target_context(context)
-            
-            # For Slack, use the user's message timestamp as thread
-            confirmation_msg = None
-            if self.config.platform == "slack":
-                # Use the user's message timestamp as the thread ID
-                user_message_ts = context.message_id  # This is the timestamp of the user's message
-                if user_message_ts:
-                    target_context.thread_id = user_message_ts
-                
-                # Send confirmation as reply in the thread
-                confirmation_text = f"📝 *Received*\n⏳ *Processing...*"
-                parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
-                confirmation_msg = await self.im_client.send_message(
-                    target_context,
-                    confirmation_text,
-                    parse_mode=parse_mode,
-                    reply_to=user_message_ts  # Reply to the user's message
-                )
-            else:
-                # For non-Slack platforms, just send confirmation
-                confirmation_text = f"📝 *Received*\n⏳ *Processing...*"
-                parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
-                confirmation_msg = await self.im_client.send_message(
-                    target_context,
-                    confirmation_text,
-                    parse_mode=parse_mode
-                )
+            # Get user's message timestamp for Slack threading
+            user_message_ts = context.message_id if self.config.platform == "slack" else None
             
             # Determine session ID based on platform
-            thread_id = user_message_ts if self.config.platform == "slack" and user_message_ts else None
             if self.config.platform == "telegram":
                 # For Telegram, use chat_id as session ID
                 session_id = f"telegram_{context.channel_id}"
-            elif self.config.platform == "slack" and thread_id:
-                # For Slack, use thread_id as session ID
-                session_id = f"slack_{thread_id}"
+                thread_id = None
+            elif self.config.platform == "slack":
+                # For Slack, determine if this is a thread reply or new message
+                if context.thread_id:
+                    # This is a reply in an existing thread - use thread root as session ID
+                    thread_id = context.thread_id
+                    session_id = f"slack_{thread_id}"
+                else:
+                    # This is a new message in channel - use message timestamp as thread/session ID
+                    thread_id = user_message_ts
+                    session_id = f"slack_{thread_id}"
             else:
                 # Fallback to user-based session
                 session_id = f"{self.config.platform}_{context.user_id}"
+                thread_id = None
             
             # Get or create session
             session = await self.session_manager.get_or_create_session(context.user_id, context.channel_id)
+            
+            # Check if this is a new session or if the session is ready for new input
+            is_new_session = session_id not in session.claude_clients
+            is_session_active = session.session_active.get(session_id, False)
+            
+            # Only send confirmation for new sessions or if session is not active
+            if is_new_session or not is_session_active:
+                target_context = self._get_target_context(context)
+                
+                if self.config.platform == "slack":
+                    # For Slack, send to the thread
+                    if user_message_ts:
+                        target_context.thread_id = user_message_ts
+                    
+                    confirmation_text = f"⏳ Processing..."
+                    await self.im_client.send_message(
+                        target_context,
+                        confirmation_text,
+                        parse_mode='markdown',
+                        reply_to=user_message_ts
+                    )
+                else:
+                    # For non-Slack platforms
+                    confirmation_text = f"⏳ Processing..."
+                    await self.im_client.send_message(
+                        target_context,
+                        confirmation_text,
+                        parse_mode='Markdown'
+                    )
             
             # Check if we have a client for this session
             if session_id not in session.claude_clients:
@@ -222,8 +230,13 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 )
                 session.receiver_tasks[session_id] = receiver_task
             
-            # Send message immediately to the session's client
-            await self.process_message_immediately(context, message, session_id, thread_id)
+            # Check if session is active (waiting for result)
+            if is_session_active:
+                # Session is active, just send the message without confirmation
+                await self.process_message_immediately(context, message, session_id, thread_id, skip_confirmation=True)
+            else:
+                # Session is not active or new, send with normal flow
+                await self.process_message_immediately(context, message, session_id, thread_id)
             
         except Exception as e:
             logger.error(f"Error handling message: {e}")
@@ -286,6 +299,11 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 
                 # Check if this was a ResultMessage (query complete)
                 if message_type == "result":
+                    # Mark session as not active
+                    session = await self.session_manager.get_session(context.user_id)
+                    if session:
+                        session.session_active[session_id] = False
+                    
                     await self.im_client.send_message(
                         target_context,
                         "✅ Ready for next message!",
@@ -307,7 +325,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             except:
                 pass
     
-    async def process_message_immediately(self, context: MessageContext, message: str, session_id: str, thread_id: Optional[str]):
+    async def process_message_immediately(self, context: MessageContext, message: str, session_id: str, thread_id: Optional[str], skip_confirmation: bool = False):
         """Send message to Claude immediately"""
         try:
             # Get session
@@ -328,6 +346,9 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             
             # Send the message to Claude
             try:
+                # Mark session as active
+                session.session_active[session_id] = True
+                
                 await client.query(message, session_id=session_id)
                 logger.info(f"Sent message to Claude for session {session_id}")
             except Exception as e:
@@ -366,6 +387,10 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             except Exception as e:
                 logger.error(f"Error disconnecting Claude client: {e}")
             del session.claude_clients[session_id]
+            
+        # Remove session active status
+        if session_id in session.session_active:
+            del session.session_active[session_id]
             
         logger.info(f"Cleaned up session {session_id}")
     

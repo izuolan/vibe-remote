@@ -21,6 +21,8 @@ class UserSession:
     claude_clients: Dict[str, ClaudeSDKClient] = field(default_factory=dict)
     # Map of session_id to message receiver task
     receiver_tasks: Dict[str, asyncio.Task] = field(default_factory=dict)
+    # Map of session_id to boolean indicating if session is waiting for result
+    session_active: Dict[str, bool] = field(default_factory=dict)
     
     
     async def cleanup_clients(self):
