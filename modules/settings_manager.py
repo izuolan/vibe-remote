@@ -92,21 +92,25 @@ class SettingsManager:
         self.update_user_settings(user_id, settings)
         return is_hidden
     
-    def set_custom_cwd(self, user_id: int, cwd: str):
+    def set_custom_cwd(self, user_id: Union[int, str], cwd: str):
         """Set custom working directory for user"""
         settings = self.get_user_settings(user_id)
         settings.custom_cwd = cwd
         self.update_user_settings(user_id, settings)
     
-    def get_custom_cwd(self, user_id: int) -> Optional[str]:
+    def get_custom_cwd(self, user_id: Union[int, str]) -> Optional[str]:
         """Get custom working directory for user"""
         settings = self.get_user_settings(user_id)
         return settings.custom_cwd
     
-    def is_message_type_hidden(self, user_id: int, message_type: str) -> bool:
+    def is_message_type_hidden(self, user_id: Union[int, str], message_type: str) -> bool:
         """Check if a message type is hidden for user"""
         settings = self.get_user_settings(user_id)
         return message_type in settings.hidden_message_types
+    
+    def save_user_settings(self, user_id: Union[int, str], settings: UserSettings):
+        """Save settings for a specific user (alias for update_user_settings)"""
+        self.update_user_settings(user_id, settings)
     
     def get_available_message_types(self) -> List[str]:
         """Get list of available message types that can be hidden"""

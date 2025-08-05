@@ -57,7 +57,8 @@ class SlackConfig(BaseIMConfig):
     bot_token: str
     app_token: Optional[str] = None  # For Socket Mode
     signing_secret: Optional[str] = None  # For webhook mode
-    target_channel: Optional[str] = None  # Default channel for outputs
+    target_channel: Optional[str] = None  # If set, only respond in this channel
+    require_mention: bool = True  # Require @mention in channels (ignored in DMs)
     
     @classmethod
     def from_env(cls) -> 'SlackConfig':
@@ -69,7 +70,8 @@ class SlackConfig(BaseIMConfig):
             bot_token=bot_token,
             app_token=os.getenv("SLACK_APP_TOKEN"),
             signing_secret=os.getenv("SLACK_SIGNING_SECRET"),
-            target_channel=os.getenv("SLACK_TARGET_CHANNEL")
+            target_channel=os.getenv("SLACK_TARGET_CHANNEL") or None,  # Convert empty string to None
+            require_mention=os.getenv("SLACK_REQUIRE_MENTION", "true").lower() == "true"
         )
     
     def validate(self) -> bool:

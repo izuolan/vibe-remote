@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from typing import Optional
+from typing import Optional, Union
 from config.settings import AppConfig
 from modules.im import BaseIMClient, MessageContext, InlineKeyboard, InlineButton, IMFactory
 from modules.claude_client import ClaudeClient
@@ -199,7 +199,8 @@ Choose a command below or type any message to add it to the processing queue."""
                 thread_id = message_data.get('thread_id')
                 
                 # Get user's CWD from settings if available
-                custom_cwd = self.settings_manager.get_custom_cwd(context.user_id)
+                settings_key = self._get_settings_key(context)
+                custom_cwd = self.settings_manager.get_custom_cwd(settings_key)
                 if custom_cwd:
                     # Temporarily set the CWD for this execution
                     original_cwd = self.claude_client.options.cwd
@@ -208,8 +209,9 @@ Choose a command below or type any message to add it to the processing queue."""
                 # Execute with Claude
                 async def on_claude_message(claude_msg: str, message_type: str = None):
                     # Check if this message type should be hidden
-                    if message_type and self.settings_manager.is_message_type_hidden(context.user_id, message_type):
-                        logger.info(f"Skipping {message_type} message for user {context.user_id} (hidden in settings)")
+                    settings_key = self._get_settings_key(context)
+                    if message_type and self.settings_manager.is_message_type_hidden(settings_key, message_type):
+                        logger.info(f"Skipping {message_type} message for settings key {settings_key} (hidden in settings)")
                         return
                     
                     # Send Claude's formatted output
@@ -289,6 +291,20 @@ Choose a command below or type any message to add it to the processing queue."""
         
         return target_context
     
+    def _get_settings_key(self, context: MessageContext) -> Union[str, int]:
+        """Get the appropriate settings key based on platform"""
+        if self.config.platform == "slack":
+            # For Slack, use channel_id as the key
+            return context.channel_id
+        else:
+            # For Telegram, use chat_id/channel_id (convert to int)
+            # Note: In Telegram, we use channel_id which is actually the chat_id
+            try:
+                return int(context.channel_id) if context.channel_id else context.channel_id
+            except (ValueError, TypeError):
+                # Fallback to user_id for backward compatibility
+                return int(context.user_id) if context.user_id else context.user_id
+    
     async def handle_execute(self, context: MessageContext, args: str = ""):
         """Handle manual execute command"""
         target_context = self._get_target_context(context)
@@ -333,7 +349,8 @@ Choose a command below or type any message to add it to the processing queue."""
         """Handle cwd command - show current working directory"""
         try:
             # Check if user has custom CWD in settings
-            custom_cwd = self.settings_manager.get_custom_cwd(context.user_id)
+            settings_key = self._get_settings_key(context)
+            custom_cwd = self.settings_manager.get_custom_cwd(settings_key)
             current_cwd = custom_cwd if custom_cwd else self.claude_client.options.cwd
             absolute_path = os.path.abspath(current_cwd)
             
@@ -387,7 +404,8 @@ Choose a command below or type any message to add it to the processing queue."""
                 return
             
             # Save to user settings
-            self.settings_manager.set_custom_cwd(context.user_id, absolute_path)
+            settings_key = self._get_settings_key(context)
+            self.settings_manager.set_custom_cwd(settings_key, absolute_path)
             
             logger.info(f"User {context.user_id} changed cwd to: {absolute_path}")
             
@@ -434,7 +452,8 @@ Choose a command below or type any message to add it to the processing queue."""
     async def _handle_settings_traditional(self, context: MessageContext):
         """Handle settings for non-Slack platforms (Telegram, etc)"""
         # Get current settings
-        user_settings = self.settings_manager.get_user_settings(context.user_id)
+        settings_key = self._get_settings_key(context)
+        user_settings = self.settings_manager.get_user_settings(settings_key)
         
         # Get available message types and display names
         message_types = self.settings_manager.get_available_message_types()
@@ -474,12 +493,13 @@ Choose a command below or type any message to add it to the processing queue."""
         
         if trigger_id and hasattr(self.im_client, 'open_settings_modal'):
             # We have trigger_id, open modal directly
-            user_settings = self.settings_manager.get_user_settings(context.user_id)
+            settings_key = self._get_settings_key(context)
+            user_settings = self.settings_manager.get_user_settings(settings_key)
             message_types = self.settings_manager.get_available_message_types()
             display_names = self.settings_manager.get_message_type_display_names()
             
             try:
-                await self.im_client.open_settings_modal(trigger_id, user_settings, message_types, display_names)
+                await self.im_client.open_settings_modal(trigger_id, user_settings, message_types, display_names, context.channel_id)
             except Exception as e:
                 logger.error(f"Error opening settings modal: {e}")
                 await self.im_client.send_message(context, "❌ Failed to open settings. Please try again.")
@@ -509,12 +529,13 @@ Choose a command below or type any message to add it to the processing queue."""
             if callback_data == "open_settings_modal" and self.config.platform == "slack":
                 trigger_id = context.platform_specific.get('trigger_id') if context.platform_specific else None
                 if trigger_id and hasattr(self.im_client, 'open_settings_modal'):
-                    user_settings = self.settings_manager.get_user_settings(context.user_id)
+                    settings_key = self._get_settings_key(context)
+                    user_settings = self.settings_manager.get_user_settings(settings_key)
                     message_types = self.settings_manager.get_available_message_types()
                     display_names = self.settings_manager.get_message_type_display_names()
                     
                     try:
-                        await self.im_client.open_settings_modal(trigger_id, user_settings, message_types, display_names)
+                        await self.im_client.open_settings_modal(trigger_id, user_settings, message_types, display_names, context.channel_id)
                     except Exception as e:
                         logger.error(f"Error opening settings modal: {e}")
                         await self.im_client.send_message(context, "❌ Failed to open settings. Please try again.")
@@ -593,10 +614,11 @@ _Tip: All commands work in DMs, channels, and threads!_"""
             elif callback_data.startswith("toggle_msg_"):
                 # Toggle message type visibility
                 msg_type = callback_data.replace("toggle_msg_", "")
-                is_hidden = self.settings_manager.toggle_hidden_message_type(context.user_id, msg_type)
+                settings_key = self._get_settings_key(context)
+                is_hidden = self.settings_manager.toggle_hidden_message_type(settings_key, msg_type)
                 
                 # Update the keyboard
-                user_settings = self.settings_manager.get_user_settings(context.user_id)
+                user_settings = self.settings_manager.get_user_settings(settings_key)
                 message_types = self.settings_manager.get_available_message_types()
                 display_names = self.settings_manager.get_message_type_display_names()
                 
@@ -660,19 +682,23 @@ _Tip: All commands work in DMs, channels, and threads!_"""
             logger.error(f"Error handling callback query: {e}")
             await self.im_client.send_message(context, f"Error: {str(e)}")
     
-    async def handle_settings_update(self, user_id: str, hidden_message_types: list):
+    async def handle_settings_update(self, user_id: str, hidden_message_types: list, channel_id: str = None):
         """Handle settings update from modal submission (Slack)"""
         try:
+            # For Slack, we need to use channel_id as the key
+            # The channel_id should be passed from the modal submission context
+            settings_key = channel_id if self.config.platform == "slack" and channel_id else user_id
+            
             # Get current settings
-            user_settings = self.settings_manager.get_user_settings(user_id)
+            user_settings = self.settings_manager.get_user_settings(settings_key)
             
             # Update hidden message types
             user_settings.hidden_message_types = hidden_message_types
             
             # Save settings
-            self.settings_manager.save_user_settings(user_id, user_settings)
+            self.settings_manager.save_user_settings(settings_key, user_settings)
             
-            logger.info(f"Updated settings for user {user_id}: hidden types = {hidden_message_types}")
+            logger.info(f"Updated settings for key {settings_key}: hidden types = {hidden_message_types}")
             
             # Send confirmation message (if we have a way to reach the user)
             # Note: In Slack modals, we don't have direct context to send messages

@@ -236,6 +236,15 @@ class SlackBot(BaseIMClient):
             if event.get("bot_id"):
                 return
             
+            channel_id = event.get("channel")
+            
+            # Check if target_channel is configured and message is not in that channel
+            if self.config.target_channel and channel_id != self.config.target_channel:
+                # Check if this is a DM (starts with 'D')
+                if not channel_id.startswith('D'):
+                    logger.info(f"Ignoring message from non-target channel: {channel_id}")
+                    return
+            
             # Check if this message contains a bot mention
             # If it does, skip processing as it will be handled by app_mention event
             text = event.get("text", "")
@@ -244,10 +253,15 @@ class SlackBot(BaseIMClient):
                 logger.info(f"Skipping message event with bot mention: '{text}'")
                 return
             
+            # Check if we require mention in channels (not DMs)
+            if self.config.require_mention and not channel_id.startswith('D'):
+                logger.info(f"Ignoring non-mention message in channel: '{text}'")
+                return
+            
             # Extract context
             context = MessageContext(
                 user_id=event.get("user"),
-                channel_id=event.get("channel"),
+                channel_id=channel_id,
                 thread_id=event.get("thread_ts"),
                 message_id=event.get("ts"),
                 platform_specific={
@@ -256,7 +270,7 @@ class SlackBot(BaseIMClient):
                 }
             )
             
-            # Handle slash commands in regular messages (only in DMs or direct messages)
+            # Handle slash commands in regular messages
             if text.startswith("/"):
                 parts = text.split(maxsplit=1)
                 command = parts[0][1:]  # Remove the /
@@ -273,9 +287,18 @@ class SlackBot(BaseIMClient):
         
         elif event_type == "app_mention":
             # Handle @mentions
+            channel_id = event.get("channel")
+            
+            # Check if target_channel is configured and mention is not in that channel
+            if self.config.target_channel and channel_id != self.config.target_channel:
+                # Check if this is a DM (starts with 'D')
+                if not channel_id.startswith('D'):
+                    logger.info(f"Ignoring mention from non-target channel: {channel_id}")
+                    return
+            
             context = MessageContext(
                 user_id=event.get("user"),
-                channel_id=event.get("channel"),
+                channel_id=channel_id,
                 thread_id=event.get("thread_ts"),
                 message_id=event.get("ts"),
                 platform_specific={
@@ -416,9 +439,12 @@ class SlackBot(BaseIMClient):
             # Get the values from selected options
             hidden_types = [opt.get("value") for opt in selected_options]
             
+            # Get channel_id from the view's private_metadata if available
+            channel_id = view.get("private_metadata")
+            
             # Update settings - need access to settings manager
             if hasattr(self, '_on_settings_update'):
-                await self._on_settings_update(user_id, hidden_types)
+                await self._on_settings_update(user_id, hidden_types, channel_id)
             
             # Send success message to the user (via DM or channel)
             # We need to find the right channel to send the message
@@ -499,7 +525,7 @@ class SlackBot(BaseIMClient):
         
         return formatted
     
-    async def open_settings_modal(self, trigger_id: str, user_settings: Any, message_types: list, display_names: dict):
+    async def open_settings_modal(self, trigger_id: str, user_settings: Any, message_types: list, display_names: dict, channel_id: str = None):
         """Open a modal dialog for settings"""
         self._ensure_clients()
         
@@ -556,6 +582,7 @@ class SlackBot(BaseIMClient):
         view = {
             "type": "modal",
             "callback_id": "settings_modal",
+            "private_metadata": channel_id or "",  # Store channel_id for later use
             "title": {
                 "type": "plain_text",
                 "text": "Settings",
