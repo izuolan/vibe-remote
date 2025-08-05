@@ -238,12 +238,11 @@ class SlackBot(BaseIMClient):
             
             channel_id = event.get("channel")
             
-            # Check if target_channel is configured and message is not in that channel
-            if self.config.target_channel and channel_id != self.config.target_channel:
-                # Check if this is a DM (starts with 'D')
-                if not channel_id.startswith('D'):
-                    logger.info(f"Ignoring message from non-target channel: {channel_id}")
-                    return
+            # Check if channel is authorized based on whitelist configuration
+            if not await self._is_authorized_channel(channel_id):
+                logger.info(f"Unauthorized message from channel: {channel_id}")
+                await self._send_unauthorized_message(channel_id)
+                return
             
             # Check if this message contains a bot mention
             # If it does, skip processing as it will be handled by app_mention event
@@ -255,7 +254,8 @@ class SlackBot(BaseIMClient):
             
             # Check if channel is authorized based on whitelist
             if not await self._is_authorized_channel(channel_id):
-                logger.info(f"Ignoring message from unauthorized channel: {channel_id}")
+                logger.info(f"Unauthorized message from channel: {channel_id}")
+                await self._send_unauthorized_message(channel_id)
                 return
             
             # Check if we require mention in channels (not DMs)
@@ -296,7 +296,8 @@ class SlackBot(BaseIMClient):
             
             # Check if channel is authorized based on whitelist
             if not await self._is_authorized_channel(channel_id):
-                logger.info(f"Ignoring mention from unauthorized channel: {channel_id}")
+                logger.info(f"Unauthorized mention from channel: {channel_id}")
+                await self._send_unauthorized_message(channel_id)
                 return
             
             context = MessageContext(
@@ -345,7 +346,7 @@ class SlackBot(BaseIMClient):
         
         # Check if channel is authorized based on whitelist
         if not await self._is_authorized_channel(channel_id):
-            logger.info(f"Ignoring slash command from unauthorized channel: {channel_id}")
+            logger.info(f"Unauthorized slash command from channel: {channel_id}")
             # Send a response to user about unauthorized channel
             response_url = payload.get("response_url")
             if response_url:
@@ -410,6 +411,14 @@ class SlackBot(BaseIMClient):
             # Handle button clicks
             user = payload.get("user", {})
             actions = payload.get("actions", [])
+            channel_id = payload.get("channel", {}).get("id")
+            
+            # Check if channel is authorized for interactive components
+            if not await self._is_authorized_channel(channel_id):
+                logger.info(f"Unauthorized interactive action from channel: {channel_id}")
+                # For interactive components, we can't easily send a message back
+                # The user will just see the button doesn't respond
+                return
             
             for action in actions:
                 if action.get("type") == "button":
@@ -419,7 +428,7 @@ class SlackBot(BaseIMClient):
                         # Create a context for the callback
                         context = MessageContext(
                             user_id=user.get("id"),
-                            channel_id=payload.get("channel", {}).get("id"),
+                            channel_id=channel_id,
                             message_id=payload.get("message", {}).get("ts"),
                             platform_specific={
                                 "trigger_id": payload.get("trigger_id"),
@@ -733,3 +742,14 @@ class SlackBot(BaseIMClient):
         # Should not reach here, but handle gracefully
         logger.warning(f"Unexpected target_channel type: {type(target_channel)}")
         return True
+    
+    async def _send_unauthorized_message(self, channel_id: str):
+        """Send unauthorized access message to channel"""
+        try:
+            self._ensure_clients()
+            await self.web_client.chat_postMessage(
+                channel=channel_id,
+                text="❌ This channel is not authorized to use bot commands."
+            )
+        except Exception as e:
+            logger.error(f"Failed to send unauthorized message to {channel_id}: {e}")

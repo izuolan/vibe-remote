@@ -27,7 +27,8 @@ class TelegramBot(BaseIMClient):
         
         # Check if message is authorized based on whitelist
         if not self._is_authorized_chat(chat_id, chat_type):
-            # Silently ignore unauthorized messages
+            logger.info(f"Unauthorized message from chat: {chat_id}")
+            await self._send_unauthorized_message(chat_id)
             return
         
         # Create MessageContext
@@ -54,6 +55,15 @@ class TelegramBot(BaseIMClient):
     async def handle_telegram_callback(self, update: Update, tg_context: ContextTypes.DEFAULT_TYPE):
         """Handle callback queries from inline keyboards"""
         query = update.callback_query
+        chat_id = query.message.chat_id
+        chat_type = query.message.chat.type
+        
+        # Check if callback is authorized based on whitelist
+        if not self._is_authorized_chat(chat_id, chat_type):
+            logger.info(f"Unauthorized callback from chat: {chat_id}")
+            # For callback queries, we can answer with an alert
+            await query.answer("❌ This chat is not authorized to use bot commands.", show_alert=True)
+            return
         
         # Store the query for later use in answer_callback
         self._callback_queries[query.id] = query
@@ -61,7 +71,7 @@ class TelegramBot(BaseIMClient):
         # Create MessageContext
         context = MessageContext(
             user_id=str(query.from_user.id),
-            channel_id=str(query.message.chat_id),
+            channel_id=str(chat_id),
             message_id=str(query.message.message_id),
             platform_specific={'query': query, 'update': update, 'tg_context': tg_context, 'callback_id': query.id}
         )
@@ -79,7 +89,8 @@ class TelegramBot(BaseIMClient):
         
         # Check if command is authorized based on whitelist
         if not self._is_authorized_chat(chat_id, chat_type):
-            # Silently ignore unauthorized commands
+            logger.info(f"Unauthorized command from chat: {chat_id}")
+            await self._send_unauthorized_message(chat_id)
             return
             
         # Extract args
@@ -436,3 +447,14 @@ class TelegramBot(BaseIMClient):
         # Should not reach here, but handle gracefully
         logger.warning(f"Unexpected target_chat_id type: {type(target_chat_id)}")
         return True
+    
+    async def _send_unauthorized_message(self, chat_id: int):
+        """Send unauthorized access message to chat"""
+        try:
+            bot = self.application.bot
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ This chat is not authorized to use bot commands."
+            )
+        except Exception as e:
+            logger.error(f"Failed to send unauthorized message to {chat_id}: {e}")
