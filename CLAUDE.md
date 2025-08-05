@@ -75,6 +75,32 @@ The system uses an abstract factory pattern with platform-agnostic interfaces:
 4. Claude Code executes message sequentially
 5. Real-time output streamed back through same IM platform
 
+## User Interface
+
+### Slack Commands
+Slack uses a simplified command structure with only one slash command:
+- `/start` - Opens the main menu with interactive buttons
+
+All functionality is accessed through buttons in the /start menu:
+- **Queue Status** - Shows current queue status and messages
+- **Execute Queue** - Manually trigger queue processing
+- **Clear Queue** - Remove all pending messages
+- **Current Dir** - Display current working directory
+- **Change Work Dir** - Open modal to change working directory
+- **Settings** - Configure message visibility preferences
+- **How it Works** - Display help information
+
+### Telegram Commands
+Telegram supports traditional slash commands:
+- `/start` - Show welcome message and available commands
+- `/status` - Show current queue status
+- `/queue` - Display messages in queue
+- `/execute` - Manually process queue
+- `/clear` - Clear message queue
+- `/cwd` - Show current working directory
+- `/set_cwd <path>` - Change working directory
+- `/settings` - Open personalization settings
+
 ## Configuration Requirements
 
 ### Essential Environment Variables
@@ -101,7 +127,7 @@ Reference `modules/slack_bot.py` for a complete implementation example.
 ## Thread and Session Management
 
 ### Slack Thread Handling
-Slack conversations are automatically organized into threads using `thread_timestamps` dict. Each user/channel combination gets a persistent thread for continuity.
+Slack conversations are automatically organized into threads. Each user message creates a thread, and all bot responses are posted as replies in that thread for better organization.
 
 ### Session Isolation
 Each user has an independent message queue and execution state managed by `SessionManager`. This allows concurrent users without interference.

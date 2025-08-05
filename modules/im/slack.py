@@ -354,15 +354,9 @@ class SlackBot(BaseIMClient):
             return
         
         # Map Slack slash commands to internal commands
+        # Only /start command is exposed to users
         command_mapping = {
-            'claude-start': 'start',
-            'claude-status': 'status',
-            'claude-clear': 'clear',
-            'claude-cwd': 'cwd',
-            'claude-set-cwd': 'set_cwd',
-            'claude-queue': 'queue',
-            'claude-settings': 'settings',
-            'claude-execute': 'execute'
+            'start': 'start'
         }
         
         # Get the actual command name
@@ -399,10 +393,9 @@ class SlackBot(BaseIMClient):
         else:
             # Send response back to Slack for unknown command
             if response_url:
-                available_commands = [f"`/{k}`" for k in command_mapping.keys()]
                 await self.send_slash_response(
                     response_url, 
-                    f"❌ Unknown command: `/{command}`\n\nAvailable commands:\n{chr(10).join(available_commands)}"
+                    f"❌ Unknown command: `/{command}`\n\nPlease use `/start` to access all bot features."
                 )
     
     async def _handle_interactive(self, payload: Dict[str, Any]):
@@ -467,6 +460,22 @@ class SlackBot(BaseIMClient):
             # Update settings - need access to settings manager
             if hasattr(self, '_on_settings_update'):
                 await self._on_settings_update(user_id, hidden_types, channel_id)
+        
+        elif callback_id == "change_cwd_modal":
+            # Handle change CWD modal submission
+            user_id = payload.get("user", {}).get("id")
+            values = view.get("state", {}).get("values", {})
+            
+            # Extract new CWD path
+            new_cwd_data = values.get("new_cwd_block", {}).get("new_cwd_input", {})
+            new_cwd = new_cwd_data.get("value", "")
+            
+            # Get channel_id from private_metadata
+            channel_id = view.get("private_metadata")
+            
+            # Update CWD - need access to controller or settings manager
+            if hasattr(self, '_on_change_cwd'):
+                await self._on_change_cwd(user_id, new_cwd, channel_id)
             
             # Send success message to the user (via DM or channel)
             # We need to find the right channel to send the message
@@ -681,6 +690,86 @@ class SlackBot(BaseIMClient):
         }
         return descriptions.get(msg_type, f"{msg_type} messages")
     
+    async def open_change_cwd_modal(self, trigger_id: str, current_cwd: str, channel_id: str = None):
+        """Open a modal dialog for changing working directory"""
+        self._ensure_clients()
+        
+        # Create the modal view
+        view = {
+            "type": "modal",
+            "callback_id": "change_cwd_modal",
+            "private_metadata": channel_id or "",  # Store channel_id for later use
+            "title": {
+                "type": "plain_text",
+                "text": "Change Working Directory",
+                "emoji": True
+            },
+            "submit": {
+                "type": "plain_text",
+                "text": "Change",
+                "emoji": True
+            },
+            "close": {
+                "type": "plain_text",
+                "text": "Cancel",
+                "emoji": True
+            },
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"Current working directory:\n`{current_cwd}`"
+                    }
+                },
+                {
+                    "type": "divider"
+                },
+                {
+                    "type": "input",
+                    "block_id": "new_cwd_block",
+                    "element": {
+                        "type": "plain_text_input",
+                        "action_id": "new_cwd_input",
+                        "placeholder": {
+                            "type": "plain_text",
+                            "text": "Enter new directory path",
+                            "emoji": True
+                        },
+                        "initial_value": current_cwd
+                    },
+                    "label": {
+                        "type": "plain_text",
+                        "text": "New Working Directory:",
+                        "emoji": True
+                    },
+                    "hint": {
+                        "type": "plain_text",
+                        "text": "Use absolute path (e.g., /home/user/project) or ~ for home directory",
+                        "emoji": True
+                    }
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": "💡 _Tip: The directory will be created if it doesn't exist._"
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        try:
+            await self.web_client.views_open(
+                trigger_id=trigger_id,
+                view=view
+            )
+        except SlackApiError as e:
+            logger.error(f"Error opening change CWD modal: {e}")
+            raise
+    
     def register_callbacks(self, on_message: Optional[Callable] = None,
                          on_command: Optional[Dict[str, Callable]] = None,
                          on_callback_query: Optional[Callable] = None,
@@ -701,6 +790,10 @@ class SlackBot(BaseIMClient):
         # Register settings update handler
         if 'on_settings_update' in kwargs:
             self._on_settings_update = kwargs['on_settings_update']
+        
+        # Register change CWD handler
+        if 'on_change_cwd' in kwargs:
+            self._on_change_cwd = kwargs['on_change_cwd']
     
     async def get_or_create_thread(self, channel_id: str, user_id: str) -> Optional[str]:
         """Get existing thread timestamp or return None for new thread"""

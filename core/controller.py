@@ -58,7 +58,8 @@ class Controller:
             on_message=self.handle_user_message,
             on_command=self.command_handlers,
             on_callback_query=self.handle_callback_query,
-            on_settings_update=self.handle_settings_update
+            on_settings_update=self.handle_settings_update,
+            on_change_cwd=self.handle_change_cwd_submission
         )
     
     async def handle_start(self, context: MessageContext, args: str = ""):
@@ -109,25 +110,24 @@ How it works:
         
         # Create interactive buttons for commands
         buttons = [
-            # Row 1: Status commands
+            # Row 1: Queue operations
             [
-                InlineButton(text="📊 Queue Status", callback_data="cmd_status"),
-                InlineButton(text="📋 Show Queue", callback_data="cmd_queue")
+                InlineButton(text="📊 Queue Status", callback_data="cmd_queue_status"),
+                InlineButton(text="🚀 Execute Queue", callback_data="cmd_execute")
             ],
-            # Row 2: Queue management  
+            # Row 2: Queue management & Directory
             [
-                InlineButton(text="🚀 Execute Queue", callback_data="cmd_execute"),
-                InlineButton(text="🗑️ Clear Queue", callback_data="cmd_clear")
+                InlineButton(text="🗑️ Clear Queue", callback_data="cmd_clear"),
+                InlineButton(text="📁 Current Dir", callback_data="cmd_cwd")
             ],
-            # Row 3: Directory commands
+            # Row 3: Configuration
             [
-                InlineButton(text="📁 Current Dir", callback_data="cmd_cwd"),
+                InlineButton(text="📂 Change Work Dir", callback_data="cmd_change_cwd"),
                 InlineButton(text="⚙️ Settings", callback_data="cmd_settings")
             ],
-            # Row 4: Help and info
+            # Row 4: Help
             [
-                InlineButton(text="ℹ️ How it Works", callback_data="info_how_it_works"),
-                InlineButton(text="📖 All Commands", callback_data="info_all_commands")
+                InlineButton(text="ℹ️ How it Works", callback_data="info_how_it_works")
             ]
         ]
         
@@ -140,7 +140,7 @@ How it works:
 📍 Channel: **{channel_info.get('name', 'Unknown')}**
 
 **Quick Actions:**
-Choose a command below or type any message to add it to the processing queue."""
+Use the buttons below to manage your Claude Code sessions, or simply type any message to add it to the processing queue."""
 
         target_context = self._get_target_context(context)
         formatted_welcome = self.im_client.format_markdown(welcome_text)
@@ -166,7 +166,7 @@ Choose a command below or type any message to add it to the processing queue."""
                     target_context.thread_id = user_message_ts
                 
                 # Send confirmation as reply in the thread
-                confirmation_text = f"📝 *Received:* {message}\n⏳ *Processing...*"
+                confirmation_text = f"📝 *Received*\n⏳ *Processing...*"
                 formatted_confirmation = self.im_client.format_markdown(confirmation_text)
                 confirmation_msg = await self.im_client.send_message(
                     target_context,
@@ -176,7 +176,7 @@ Choose a command below or type any message to add it to the processing queue."""
                 )
             else:
                 # For non-Slack platforms, just send confirmation
-                confirmation_text = f"📝 *Received:* {message}\n⏳ *Processing...*"
+                confirmation_text = f"📝 *Received*\n⏳ *Processing...*"
                 formatted_confirmation = self.im_client.format_markdown(confirmation_text)
                 confirmation_msg = await self.im_client.send_message(
                     target_context,
@@ -461,6 +461,52 @@ Choose a command below or type any message to add it to the processing queue."""
             logger.error(f"Error getting queue details: {e}")
             await self.im_client.send_message(context, f"Error getting queue information: {str(e)}")
     
+    async def handle_queue_status(self, context: MessageContext):
+        """Handle combined queue status - merges status and queue details"""
+        try:
+            # Get both status and queue details
+            status = await self.session_manager.get_status(context.user_id)
+            queue_details = await self.session_manager.get_queue_details(context.user_id)
+            
+            # Combine the information
+            combined_info = f"{status}\n\n{queue_details}"
+            
+            await self.im_client.send_message(context, combined_info)
+        except Exception as e:
+            logger.error(f"Error getting queue status: {e}")
+            await self.im_client.send_message(context, f"Error getting queue status: {str(e)}")
+    
+    async def handle_change_cwd_modal(self, context: MessageContext):
+        """Handle Change Work Dir button - open modal for Slack"""
+        if self.config.platform != "slack":
+            # For non-Slack platforms, just send instructions
+            await self.im_client.send_message(
+                context,
+                "📂 To change working directory, use:\n`/set_cwd <path>`\n\nExample:\n`/set_cwd ~/projects/myapp`"
+            )
+            return
+        
+        # For Slack, open a modal dialog
+        trigger_id = context.platform_specific.get('trigger_id') if context.platform_specific else None
+        
+        if trigger_id and hasattr(self.im_client, 'open_change_cwd_modal'):
+            try:
+                # Get current CWD to show in modal
+                settings_key = self._get_settings_key(context)
+                custom_cwd = self.settings_manager.get_custom_cwd(settings_key)
+                current_cwd = custom_cwd if custom_cwd else self.config.claude.cwd
+                
+                await self.im_client.open_change_cwd_modal(trigger_id, current_cwd, context.channel_id)
+            except Exception as e:
+                logger.error(f"Error opening change CWD modal: {e}")
+                await self.im_client.send_message(context, "❌ Failed to open directory change dialog. Please try again.")
+        else:
+            # No trigger_id, show instructions
+            await self.im_client.send_message(
+                context,
+                "📂 Click the 'Change Work Dir' button in the /start menu to change working directory."
+            )
+    
     async def handle_settings(self, context: MessageContext, args: str = ""):
         """Handle settings command - show settings menu"""
         try:
@@ -578,8 +624,15 @@ Choose a command below or type any message to add it to the processing queue."""
                 command = callback_data.replace("cmd_", "")
                 logger.info(f"Executing command via button click: {command}")
                 
-                # Execute the corresponding command handler
-                if command in self.command_handlers:
+                # Handle special commands
+                if command == "queue_status":
+                    # Merge queue and status info
+                    await self.handle_queue_status(context)
+                elif command == "change_cwd":
+                    # Open modal for changing work directory
+                    await self.handle_change_cwd_modal(context)
+                elif command in self.command_handlers:
+                    # Execute the standard command handler
                     handler = self.command_handlers[command]
                     await handler(context, "")
                 else:
@@ -602,14 +655,14 @@ Choose a command below or type any message to add it to the processing queue."""
 • Use 🗑️ Clear Queue to remove all pending messages
 
 📁 *Directory Control:*
-• Set working directory with `/set_cwd <path>`
+• Use 📂 Change Work Dir button to set working directory
 • All Claude Code operations use your specified directory
-• Default directory can be configured in settings
+• Each channel can have its own working directory
 
 🎛️ *Personalization:*
 • Use ⚙️ Settings to customize message visibility
 • Hide `system messages`, `responses`, or `results` as needed
-• Settings are saved _per user_"""
+• Settings are saved _per channel_ for Slack"""
                     
                 elif callback_data == "info_all_commands":
                     info_text = """📖 *All Available Commands:*
@@ -736,6 +789,45 @@ _Tip: All commands work in DMs, channels, and threads!_"""
             
         except Exception as e:
             logger.error(f"Error updating settings: {e}")
+            # In modal context, errors are handled differently
+            raise
+    
+    async def handle_change_cwd_submission(self, user_id: str, new_cwd: str, channel_id: str = None):
+        """Handle CWD change from modal submission (Slack)"""
+        try:
+            # Expand user path and get absolute path
+            expanded_path = os.path.expanduser(new_cwd.strip())
+            absolute_path = os.path.abspath(expanded_path)
+            
+            # Check if directory exists
+            if not os.path.exists(absolute_path):
+                # Try to create it
+                try:
+                    os.makedirs(absolute_path, exist_ok=True)
+                    logger.info(f"Created directory: {absolute_path}")
+                except Exception as e:
+                    logger.error(f"Cannot create directory: {str(e)}")
+                    # In modal context, we can't send error messages directly
+                    # The modal will close, but we log the error
+                    return
+            
+            if not os.path.isdir(absolute_path):
+                logger.error(f"Path exists but is not a directory: {absolute_path}")
+                return
+            
+            # For Slack, use channel_id as the settings key
+            settings_key = channel_id if self.config.platform == "slack" and channel_id else user_id
+            
+            # Save to settings
+            self.settings_manager.set_custom_cwd(settings_key, absolute_path)
+            
+            logger.info(f"Updated CWD for key {settings_key}: {absolute_path}")
+            
+            # Note: In Slack modal context, we can't send a confirmation message directly
+            # The modal will close automatically, indicating success
+            
+        except Exception as e:
+            logger.error(f"Error updating CWD: {e}")
             # In modal context, errors are handled differently
             raise
     
