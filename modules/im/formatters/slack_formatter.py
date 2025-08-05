@@ -38,9 +38,9 @@ class SlackFormatter(BaseMarkdownFormatter):
         return text
     
     def format_code_inline(self, text: str) -> str:
-        """Format inline code - same as base but with proper escaping"""
-        # In Slack, backticks work the same way
-        # But we need to ensure special chars are escaped outside of code
+        """Format inline code - no escaping inside code blocks"""
+        # In Slack, content inside backticks should NOT be escaped
+        # Special characters like . and | are literal inside code blocks
         return f"`{text}`"
     
     def format_code_block(self, code: str, language: str = "") -> str:
@@ -92,6 +92,16 @@ class SlackFormatter(BaseMarkdownFormatter):
             return f"{emoji} {self.format_bold(title)}"
         return self.format_bold(title)
     
+    def format_key_value(self, key: str, value: str, inline: bool = True) -> str:
+        """Format key-value pair - override to avoid double escaping"""
+        # Only escape the value, not the key (key is bolded)
+        escaped_value = self.escape_special_chars(value)
+        
+        if inline:
+            return f"{self.format_bold(key)}: {escaped_value}"
+        else:
+            return f"{self.format_bold(key)}:\n{escaped_value}"
+    
     def format_horizontal_rule(self) -> str:
         """Format horizontal rule - Slack doesn't support this well"""
         # Use a series of dashes as a visual separator
@@ -99,12 +109,12 @@ class SlackFormatter(BaseMarkdownFormatter):
     
     def format_tool_name(self, tool_name: str, emoji: str = "🔧") -> str:
         """Format tool name with emoji and styling"""
-        # Don't escape tool name in code blocks
+        # Don't escape tool name - it goes directly in code blocks
         return f"{emoji} {self.format_bold('Tool')}: {self.format_code_inline(tool_name)}"
     
     def format_file_path(self, path: str, emoji: str = "📁") -> str:
         """Format file path with emoji"""
-        # Don't escape path in code blocks
+        # Don't escape path - it goes directly in code blocks
         return f"{emoji} File: {self.format_code_inline(path)}"
     
     def format_command(self, command: str) -> str:
@@ -113,4 +123,5 @@ class SlackFormatter(BaseMarkdownFormatter):
         if "\n" in command or len(command) > 80:
             return f"💻 Command:\n{self.format_code_block(command)}"
         else:
+            # Don't escape command - it goes directly in code blocks
             return f"💻 Command: {self.format_code_inline(command)}"
