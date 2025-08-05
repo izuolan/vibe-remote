@@ -53,17 +53,29 @@ class TelegramConfig(BaseIMConfig):
 
 @dataclass
 class ClaudeConfig:
-    permission_mode: str = "bypassPermissions"
-    cwd: str = "./_tmp"
-    continue_conversation: bool = True
+    permission_mode: str
+    cwd: str
+    continue_conversation: bool
     system_prompt: Optional[str] = None
     
     @classmethod
     def from_env(cls) -> 'ClaudeConfig':
+        permission_mode = os.getenv("CLAUDE_PERMISSION_MODE")
+        if not permission_mode:
+            raise ValueError("CLAUDE_PERMISSION_MODE environment variable is required")
+        
+        cwd = os.getenv("CLAUDE_CWD")
+        if not cwd:
+            raise ValueError("CLAUDE_CWD environment variable is required")
+        
+        continue_conversation_str = os.getenv("CLAUDE_CONTINUE_CONVERSATION")
+        if continue_conversation_str is None:
+            raise ValueError("CLAUDE_CONTINUE_CONVERSATION environment variable is required")
+        
         return cls(
-            permission_mode=os.getenv("CLAUDE_PERMISSION_MODE", "bypassPermissions"),
-            cwd=os.getenv("CLAUDE_CWD", "./_tmp"),
-            continue_conversation=os.getenv("CLAUDE_CONTINUE_CONVERSATION", "true").lower() == "true",
+            permission_mode=permission_mode,
+            cwd=cwd,
+            continue_conversation=continue_conversation_str.lower() == "true",
             system_prompt=os.getenv("CLAUDE_SYSTEM_PROMPT")
         )
 
@@ -74,7 +86,7 @@ class SlackConfig(BaseIMConfig):
     app_token: Optional[str] = None  # For Socket Mode
     signing_secret: Optional[str] = None  # For webhook mode
     target_channel: Optional[Union[List[str], str]] = None  # Whitelist of channel IDs. Empty list = DM only, null/None = accept all
-    require_mention: bool = True  # Require @mention in channels (ignored in DMs)
+    require_mention: bool = False  # Require @mention in channels (ignored in DMs)
     
     @classmethod
     def from_env(cls) -> 'SlackConfig':
@@ -87,7 +99,7 @@ class SlackConfig(BaseIMConfig):
             app_token=os.getenv("SLACK_APP_TOKEN"),
             signing_secret=os.getenv("SLACK_SIGNING_SECRET"),
             target_channel=cls._parse_channel_list(os.getenv("SLACK_TARGET_CHANNEL")),
-            require_mention=os.getenv("SLACK_REQUIRE_MENTION", "true").lower() == "true"
+            require_mention=os.getenv("SLACK_REQUIRE_MENTION", "false").lower() == "true"
         )
     
     def validate(self) -> bool:
@@ -133,15 +145,20 @@ class AppConfig:
     
     @classmethod
     def from_env(cls) -> 'AppConfig':
-        platform = os.getenv("IM_PLATFORM", "telegram").lower()
+        platform = os.getenv("IM_PLATFORM")
+        if not platform:
+            raise ValueError("IM_PLATFORM environment variable is required")
         
+        platform = platform.lower()
         if platform not in ["telegram", "slack"]:
             raise ValueError(f"Invalid IM_PLATFORM: {platform}. Must be 'telegram' or 'slack'")
+        
+        log_level = os.getenv("LOG_LEVEL", "INFO")  # Keep default for log level as it's optional
         
         config = cls(
             platform=platform,
             claude=ClaudeConfig.from_env(),
-            log_level=os.getenv("LOG_LEVEL", "INFO")
+            log_level=log_level
         )
         
         # Load platform-specific config
