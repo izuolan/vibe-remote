@@ -230,3 +230,8 @@ Different platforms have unique markdown requirements:
 2. **Session Isolation**: Each user's sessions are completely isolated
 3. **Command Validation**: All user inputs are validated before execution
 4. **File Path Security**: Working directory restrictions prevent unauthorized access
+
+## Best Practices
+
+- **Process Management**:
+    - 不要直接执行杀进程来重启服务，使用./start.sh会自动杀掉对应进程并重启

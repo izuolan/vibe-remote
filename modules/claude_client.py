@@ -57,9 +57,9 @@ class ClaudeClient:
 
         for block in content_blocks:
             if isinstance(block, TextBlock):
-                # Escape text content using formatter
-                escaped_text = self.formatter.escape_special_chars(block.text)
-                formatted_parts.append(escaped_text)
+                # Don't escape here - let the formatter handle it during final formatting
+                # This avoids double escaping
+                formatted_parts.append(block.text)
             elif isinstance(block, ToolUseBlock):
                 tool_info = self._format_tool_use_block(block)
                 formatted_parts.append(tool_info)

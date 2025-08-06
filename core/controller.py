@@ -133,9 +133,9 @@ How it works:
 Use the buttons below to manage your Claude Code sessions, or simply type any message to start chatting with Claude!"""
 
         target_context = self._get_target_context(context)
-        # For Telegram, send with Markdown parse mode (not MarkdownV2)
+        # For Telegram, send with MarkdownV2 parse mode
         # For Slack, use markdown
-        parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
+        parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'
         await self.im_client.send_message_with_buttons(
             target_context,
             welcome_text,
@@ -194,11 +194,12 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                     )
                 else:
                     # For non-Slack platforms
-                    confirmation_text = f"⏳ Processing..."
+                    # Need to escape special chars for MarkdownV2
+                    confirmation_text = f"⏳ Processing\\.\\.\\."
                     await self.im_client.send_message(
                         target_context,
                         confirmation_text,
-                        parse_mode='Markdown'
+                        parse_mode='MarkdownV2'
                     )
             
             # Check if we have a client for this session
@@ -245,7 +246,9 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             
         except Exception as e:
             logger.error(f"Error handling message: {e}")
-            await self.im_client.send_message(context, "Error processing message.")
+            # Escape for MarkdownV2 if needed
+            error_msg = "Error processing message\\." if self.config.platform == "telegram" else "Error processing message."
+            await self.im_client.send_message(context, error_msg)
     
     async def _session_message_receiver(self, session_id: str, client: ClaudeSDKClient, context: MessageContext, thread_id: Optional[str]):
         """Persistent message receiver for a session"""
@@ -294,7 +297,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 # Format and send message
                 formatted_message = self.claude_client.format_message(message)
                 if formatted_message and formatted_message.strip():
-                    parse_mode = 'markdown' if self.config.platform == "slack" else 'Markdown'
+                    parse_mode = 'markdown' if self.config.platform == "slack" else 'MarkdownV2'
                     await self.im_client.send_message(
                         target_context,
                         formatted_message,
@@ -309,9 +312,11 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                     if session:
                         session.session_active[session_id] = False
                     
+                    # Escape special chars for MarkdownV2 if needed
+                    ready_msg = "✅ Ready for next message\\!" if self.config.platform == "telegram" else "✅ Ready for next message!"
                     await self.im_client.send_message(
                         target_context,
-                        "✅ Ready for next message!",
+                        ready_msg,
                         reply_to=thread_id if self.config.platform == "slack" else None
                     )
                     
@@ -322,9 +327,18 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             logger.error(f"Error in message receiver for session {session_id}: {e}")
             # Notify user of error
             try:
+                if self.config.platform == "telegram":
+                    # Escape for MarkdownV2
+                    from telegram.helpers import escape_markdown
+                    escaped_error = escape_markdown(str(e), version=2)
+                    # Escape the static text parts properly for MarkdownV2
+                    error_msg = f"❌ Session error: {escaped_error}\nPlease use /clear to reset\\."
+                else:
+                    error_msg = f"❌ Session error: {str(e)}\nPlease use /clear to reset."
+                    
                 await self.im_client.send_message(
                     target_context,
-                    f"❌ Session error: {str(e)}\nPlease use /clear to reset.",
+                    error_msg,
                     reply_to=thread_id if self.config.platform == "slack" else None
                 )
             except:
@@ -354,18 +368,35 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 
                 # Notify user
                 target_context = self._get_target_context(context)
+                if self.config.platform == "telegram":
+                    # Escape for MarkdownV2
+                    from telegram.helpers import escape_markdown
+                    escaped_error = escape_markdown(str(e), version=2)
+                    # Escape the static text parts properly for MarkdownV2
+                    error_msg = f"❌ Error: {escaped_error}\nPlease try again or use /clear to reset\\."
+                else:
+                    error_msg = f"❌ Error: {str(e)}\nPlease try again or use /clear to reset."
+                    
                 await self.im_client.send_message(
                     target_context,
-                    f"❌ Error: {str(e)}\nPlease try again or use /clear to reset.",
+                    error_msg,
                     reply_to=thread_id if self.config.platform == "slack" else None
                 )
                 
         except Exception as e:
             logger.error(f"Error in process_message_immediately: {e}")
             target_context = self._get_target_context(context)
+            if self.config.platform == "telegram":
+                # Escape for MarkdownV2
+                from telegram.helpers import escape_markdown
+                escaped_error = escape_markdown(str(e), version=2)
+                error_msg = f"❌ Unexpected error: {escaped_error}"
+            else:
+                error_msg = f"❌ Unexpected error: {str(e)}"
+                
             await self.im_client.send_message(
                 target_context,
-                f"❌ Unexpected error: {str(e)}"
+                error_msg
             )
     
     async def _cleanup_session(self, session: UserSession, session_id: str) -> None:
@@ -495,7 +526,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             # Combine all parts
             response_text = path_line + "\n" + "\n".join(status_lines)
             
-            parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
+            parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'
             await self.im_client.send_message(context, response_text, parse_mode=parse_mode)
         except Exception as e:
             logger.error(f"Error getting cwd: {e}")
@@ -527,7 +558,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             if not os.path.isdir(absolute_path):
                 formatter = self.im_client.formatter
                 error_text = f"❌ Path exists but is not a directory: {formatter.format_code_inline(absolute_path)}"
-                parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
+                parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'
                 await self.im_client.send_message(context, error_text, parse_mode=parse_mode)
                 return
             
@@ -543,7 +574,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 f"{formatter.format_code_inline(absolute_path)}\n\n"
                 f"This setting has been saved for your user."
             )
-            parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
+            parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'
             await self.im_client.send_message(context, response_text, parse_mode=parse_mode)
             
         except Exception as e:
@@ -641,7 +672,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             target_context,
             "⚙️ *Settings \\- Message Visibility*\n\nSelect which message types to hide from Claude output:",
             keyboard,
-            parse_mode='Markdown' if self.config.platform == "telegram" else 'markdown'
+            parse_mode='MarkdownV2' if self.config.platform == "telegram" else 'markdown'
         )
     
     async def _handle_settings_slack(self, context: MessageContext):
@@ -677,7 +708,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 target_context,
                 "⚙️ *Personalization Settings*\n\nConfigure how Claude Code messages appear in your Slack workspace.",
                 keyboard,
-                parse_mode='Markdown' if self.config.platform == "telegram" else 'markdown'
+                parse_mode='MarkdownV2' if self.config.platform == "telegram" else 'markdown'
             )
     
     async def handle_callback_query(self, context: MessageContext, callback_data: str):
@@ -719,8 +750,8 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                     await self.im_client.send_message(context, f"❌ Unknown command: {command}")
                 return
             
-            # Handle info button clicks from /start message
-            elif callback_data.startswith("info_"):
+            # Handle info button clicks from /start message (but not info_msg_types)
+            elif callback_data.startswith("info_") and callback_data != "info_msg_types":
                 if callback_data == "info_how_it_works":
                     info_text = """📚 *How Claude Code Bot Works:*
 
@@ -764,7 +795,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
 _Tip: All commands work in DMs, channels, and threads!_"""
                 
                 # Send the info message for either info button
-                parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
+                parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'
                 await self.im_client.send_message(context, info_text, parse_mode=parse_mode)
                 return
             
@@ -824,7 +855,7 @@ _Tip: All commands work in DMs, channels, and threads!_"""
                     await self.im_client.send_message(
                         context,
                         f"{display_name} messages are now {action}",
-                        parse_mode='Markdown' if self.config.platform == "telegram" else 'markdown'
+                        parse_mode='MarkdownV2' if self.config.platform == "telegram" else 'markdown'
                     )
                 
             elif callback_data == "info_msg_types":
@@ -832,24 +863,41 @@ _Tip: All commands work in DMs, channels, and threads!_"""
                 logger.info(f"Handling info_msg_types callback for user {context.user_id}")
                 
                 try:
+                    # Initialize info_text early to avoid unbound variable error
+                    info_text = ""
+                    
                     formatter = self.im_client.formatter
                     
                     # Build info text using formatter to handle escaping properly
-                    lines = [
-                        f"📋 {formatter.format_bold('Message Types Info:')}",
-                        "",
-                        f"• {formatter.format_bold('System')} - System initialization and status messages",
-                        f"• {formatter.format_bold('Response')} - Tool execution responses and results",
-                        f"• {formatter.format_bold('Assistant')} - Claude's messages and explanations",
-                        f"• {formatter.format_bold('Result')} - Final execution results and summaries",
-                        "",
-                        "Hidden messages won't be sent to your IM platform."
-                    ]
+                    if self.config.platform == "telegram":
+                        # For Telegram, need to escape special characters in MarkdownV2
+                        lines = [
+                            f"📋 {formatter.format_bold('Message Types Info:')}",
+                            "",
+                            f"• {formatter.format_bold('System')} \\- System initialization and status messages",
+                            f"• {formatter.format_bold('Response')} \\- Tool execution responses and results",
+                            f"• {formatter.format_bold('Assistant')} \\- Claude's messages and explanations",
+                            f"• {formatter.format_bold('Result')} \\- Final execution results and summaries",
+                            "",
+                            "Hidden messages won't be sent to your IM platform\\."
+                        ]
+                    else:
+                        # For Slack, no escaping needed for dashes
+                        lines = [
+                            f"📋 {formatter.format_bold('Message Types Info:')}",
+                            "",
+                            f"• {formatter.format_bold('System')} - System initialization and status messages",
+                            f"• {formatter.format_bold('Response')} - Tool execution responses and results",
+                            f"• {formatter.format_bold('Assistant')} - Claude's messages and explanations",
+                            f"• {formatter.format_bold('Result')} - Final execution results and summaries",
+                            "",
+                            "Hidden messages won't be sent to your IM platform."
+                        ]
                     
                     info_text = "\n".join(lines)
                     
                     # Send as new message
-                    parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
+                    parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'
                     await self.im_client.send_message(context, info_text, parse_mode=parse_mode)
                     logger.info(f"Sent info_msg_types message to user {context.user_id}")
                     

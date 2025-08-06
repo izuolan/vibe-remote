@@ -127,22 +127,40 @@ class BaseMarkdownFormatter(ABC):
         # Add session ID if available
         if session_id:
             session_line = f"🔗 Session ID: {self.format_code_inline(session_id)}"
-            ready_line = f"✨ {self.escape_special_chars('Ready to work!')}"
+            ready_line = f"✨ Ready to work!"
             return f"{header}\n{cwd_line}\n{session_line}\n{ready_line}"
         else:
-            ready_line = f"✨ {self.escape_special_chars('Ready to work!')}"
+            ready_line = f"✨ Ready to work!"
             return f"{header}\n{cwd_line}\n{ready_line}"
     
     def format_assistant_message(self, content_parts: List[str]) -> str:
         """Format assistant message"""
         header = self.format_section_header("Assistant", "🤖")
-        parts = [header] + content_parts
+        # Escape content parts that are plain text
+        escaped_parts = []
+        for part in content_parts:
+            # Only escape if it's plain text (not already formatted with tool info)
+            if not part.startswith(("🔧", "💻", "🔍", "📖", "✏️", "📝", "📄", "📓", "🌐", "✅", "❌", "🤖", "📂", "🔎", "🚪")):
+                escaped_parts.append(self.escape_special_chars(part))
+            else:
+                # Already formatted tool output, don't escape
+                escaped_parts.append(part)
+        parts = [header] + escaped_parts
         return "\n\n".join(parts)
     
     def format_user_message(self, content_parts: List[str]) -> str:
         """Format user/response message"""
         header = self.format_section_header("Response", "👤")
-        parts = [header] + content_parts
+        # Escape content parts that are plain text
+        escaped_parts = []
+        for part in content_parts:
+            # Only escape if it's plain text (not already formatted)
+            if not part.startswith(("🔧", "💻", "🔍", "📖", "✏️", "📝", "📄", "📓", "🌐", "✅", "❌", "🤖", "📂", "🔎", "🚪")):
+                escaped_parts.append(self.escape_special_chars(part))
+            else:
+                # Already formatted output, don't escape
+                escaped_parts.append(part)
+        parts = [header] + escaped_parts
         return "\n\n".join(parts)
     
     def format_result_message(self, subtype: str, duration_ms: int, result: Optional[str] = None) -> str:
@@ -157,8 +175,10 @@ class BaseMarkdownFormatter(ABC):
         else:
             duration_str = f"{seconds}s"
         
-        # Format result
-        header = self.format_section_header(f"Result ({subtype})", "📊")
+        # Format result - don't include subtype in parentheses to avoid escaping issues
+        header = self.format_section_header("Result", "📊")
+        if subtype:
+            header += f" {self.format_italic(subtype)}"
         duration_line = self.format_key_value("⏱️ Duration", duration_str)
         
         result_text = f"{header}\n{duration_line}"
