@@ -51,25 +51,62 @@ class SlackBot(BaseIMClient):
         
         Main differences:
         - Bold: ** to *
-        - Italic: * to _
+        - Italic: * to _  
+        - Code blocks: ``` preserved
+        - Inline code: ` preserved
+        - Links: [text](url) to <url|text>
         - No need to escape parentheses
         """
         import re
         
-        # Strategy: First handle italic (single *), then bold (double **)
-        # This prevents the bold conversion from affecting italic markers
+        # Protect code blocks and inline code from conversion
+        # Store them temporarily and restore after other conversions
+        code_blocks = []
+        inline_codes = []
         
-        # Step 1: Temporarily replace single asterisks with a placeholder for italic
+        # Step 1: Extract and protect code blocks (```)
+        def save_code_block(match):
+            code_blocks.append(match.group(0))
+            return f"CODE_BLOCK_{len(code_blocks)-1}_PLACEHOLDER"
+        
+        text = re.sub(r'```[\s\S]*?```', save_code_block, text)
+        
+        # Step 2: Extract and protect inline code (`)
+        def save_inline_code(match):
+            inline_codes.append(match.group(0))
+            return f"INLINE_CODE_{len(inline_codes)-1}_PLACEHOLDER"
+        
+        text = re.sub(r'`[^`]+`', save_inline_code, text)
+        
+        # Step 3: Convert links [text](url) to <url|text>
+        text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<\2|\1>', text)
+        
+        # Step 4: Handle italic (single *) - protect them first
         # Match single * that are not preceded or followed by another *
         text = re.sub(r'(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)', r'ITALIC_START\1ITALIC_END', text)
         
-        # Step 2: Convert bold (**text** to *text*)
+        # Step 5: Convert bold (**text** to *text*)
         text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
         
-        # Step 3: Convert the italic placeholders to underscores
+        # Step 6: Convert the italic placeholders to underscores
         text = text.replace('ITALIC_START', '_').replace('ITALIC_END', '_')
         
-        # Remove unnecessary escaping of parentheses and dots
+        # Step 7: Convert headers (# Header to *Header*)
+        # Slack doesn't have headers, so we make them bold
+        text = re.sub(r'^#{1,6}\s+(.+)$', r'*\1*', text, flags=re.MULTILINE)
+        
+        # Step 8: Convert unordered lists (* item or - item to • item)
+        # But don't convert bold markers
+        text = re.sub(r'^[-\*]\s+', '• ', text, flags=re.MULTILINE)
+        
+        # Step 9: Restore code blocks and inline code
+        for i, code_block in enumerate(code_blocks):
+            text = text.replace(f"CODE_BLOCK_{i}_PLACEHOLDER", code_block)
+        
+        for i, inline_code in enumerate(inline_codes):
+            text = text.replace(f"INLINE_CODE_{i}_PLACEHOLDER", inline_code)
+        
+        # Step 10: Remove unnecessary escaping of parentheses and dots
         text = text.replace(r'\(', '(').replace(r'\)', ')')
         text = text.replace(r'\.', '.')
         
