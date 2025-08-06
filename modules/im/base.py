@@ -102,6 +102,24 @@ class BaseIMClient(ABC):
         self.on_callback_query_callback: Optional[Callable] = None
         # Platform-specific formatter will be set by subclasses
         self.formatter = None
+    
+    def get_default_parse_mode(self) -> str:
+        """Get the default parse mode for this platform
+        
+        Returns:
+            Default parse mode string for the platform
+        """
+        # Default implementation - subclasses should override
+        return None
+    
+    def should_use_thread_for_reply(self) -> bool:
+        """Check if this platform uses threads for replies
+        
+        Returns:
+            True if platform uses threads (like Slack), False otherwise
+        """
+        # Default implementation - subclasses should override
+        return False
         
     @abstractmethod
     async def send_message(self, context: MessageContext, text: str, 

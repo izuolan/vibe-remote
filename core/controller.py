@@ -135,12 +135,11 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
         target_context = self._get_target_context(context)
         # For Telegram, send with MarkdownV2 parse mode
         # For Slack, use markdown
-        parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'
+        # parse_mode will be defaulted by IM client
         await self.im_client.send_message_with_buttons(
             target_context,
             welcome_text,
-            keyboard,
-            parse_mode=parse_mode
+            keyboard
         )
     
     async def handle_user_message(self, context: MessageContext, message: str):
@@ -316,9 +315,11 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                     # Format ready message using formatter
                     formatter = self.im_client.formatter
                     ready_msg = formatter.format_success("Ready for next message!")
+                    # parse_mode will be defaulted by IM client
                     await self.im_client.send_message(
                         target_context,
                         ready_msg,
+                        parse_mode=parse_mode,
                         reply_to=thread_id if self.config.platform == "slack" else None
                     )
                     
@@ -515,8 +516,8 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             # Combine all parts
             response_text = path_line + "\n" + "\n".join(status_lines)
             
-            parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'
-            await self.im_client.send_message(context, response_text, parse_mode=parse_mode)
+            # parse_mode will be defaulted by IM client
+            await self.im_client.send_message(context, response_text)
         except Exception as e:
             logger.error(f"Error getting cwd: {e}")
             await self.im_client.send_message(context, f"Error getting working directory: {str(e)}")
@@ -547,8 +548,8 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             if not os.path.isdir(absolute_path):
                 formatter = self.im_client.formatter
                 error_text = f"❌ Path exists but is not a directory: {formatter.format_code_inline(absolute_path)}"
-                parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'
-                await self.im_client.send_message(context, error_text, parse_mode=parse_mode)
+                # parse_mode will be defaulted by IM client
+                await self.im_client.send_message(context, error_text)
                 return
             
             # Save to user settings
@@ -563,8 +564,8 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 f"{formatter.format_code_inline(absolute_path)}\n\n"
                 f"This setting has been saved for your user."
             )
-            parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'
-            await self.im_client.send_message(context, response_text, parse_mode=parse_mode)
+            # parse_mode will be defaulted by IM client
+            await self.im_client.send_message(context, response_text)
             
         except Exception as e:
             logger.error(f"Error setting cwd: {e}")
@@ -784,8 +785,8 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
 _Tip: All commands work in DMs, channels, and threads!_"""
                 
                 # Send the info message for either info button
-                parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'
-                await self.im_client.send_message(context, info_text, parse_mode=parse_mode)
+                # parse_mode will be defaulted by IM client
+                await self.im_client.send_message(context, info_text)
                 return
             
             # Handle settings toggle buttons (existing functionality)
@@ -868,8 +869,8 @@ _Tip: All commands work in DMs, channels, and threads!_"""
                     )
                     
                     # Send as new message
-                    parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'
-                    await self.im_client.send_message(context, info_text, parse_mode=parse_mode)
+                    # parse_mode will be defaulted by IM client
+                    await self.im_client.send_message(context, info_text)
                     logger.info(f"Sent info_msg_types message to user {context.user_id}")
                     
                 except Exception as e:

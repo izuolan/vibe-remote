@@ -35,6 +35,14 @@ class TelegramBot(BaseIMClient):
 
         # Store callback queries for answering
         self._callback_queries: Dict[str, Any] = {}
+    
+    def get_default_parse_mode(self) -> str:
+        """Get the default parse mode for Telegram"""
+        return "MarkdownV2"
+    
+    def should_use_thread_for_reply(self) -> bool:
+        """Telegram doesn't use threads for replies"""
+        return False
 
     async def handle_telegram_message(
         self, update: Update, tg_context: ContextTypes.DEFAULT_TYPE
@@ -305,6 +313,7 @@ class TelegramBot(BaseIMClient):
         # Handle thread_id as reply_to_message_id in Telegram
         kwargs = {"chat_id": chat_id, "text": text}
 
+        # Default to MarkdownV2 for Telegram if not specified
         if parse_mode:
             # Handle different parse modes:
             # 'markdown' (from Slack) -> 'Markdown' (Telegram v1)
@@ -314,6 +323,9 @@ class TelegramBot(BaseIMClient):
                 kwargs["parse_mode"] = "Markdown"
             else:
                 kwargs["parse_mode"] = parse_mode
+        else:
+            # Default to MarkdownV2 for all messages
+            kwargs["parse_mode"] = "MarkdownV2"
 
         if reply_to or context.thread_id:
             kwargs["reply_to_message_id"] = int(reply_to or context.thread_id)
@@ -334,6 +346,12 @@ class TelegramBot(BaseIMClient):
     ) -> str:
         """Send a message with inline buttons - BaseIMClient implementation"""
         bot = self.application.bot
+
+        # Default to MarkdownV2 if not specified
+        if not parse_mode:
+            parse_mode = "MarkdownV2"
+        elif parse_mode == "markdown":
+            parse_mode = "Markdown"
 
         # Convert our generic keyboard to Telegram keyboard
         tg_keyboard = []

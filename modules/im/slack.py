@@ -35,6 +35,14 @@ class SlackBot(BaseIMClient):
         # Store trigger IDs for modal interactions
         self.trigger_ids: Dict[str, str] = {}
     
+    def get_default_parse_mode(self) -> str:
+        """Get the default parse mode for Slack"""
+        return "markdown"
+    
+    def should_use_thread_for_reply(self) -> bool:
+        """Slack uses threads for replies"""
+        return True
+    
     def _ensure_clients(self):
         """Ensure web and socket clients are initialized"""
         if self.web_client is None:
@@ -159,6 +167,10 @@ class SlackBot(BaseIMClient):
         """Send a message with interactive buttons"""
         self._ensure_clients()
         try:
+            # Default to markdown for Slack if not specified
+            if not parse_mode:
+                parse_mode = 'markdown'
+            
             # Convert markdown to Slack mrkdwn if needed
             if parse_mode == 'markdown':
                 text = self._convert_markdown_to_slack_mrkdwn(text)
