@@ -2,19 +2,26 @@
 import os
 import sys
 import logging
+import asyncio
 from dotenv import load_dotenv
 from config.settings import AppConfig
-from core.controller import Controller
+from core.controller_refactored import Controller
 
 # Load environment variables from .env file
 load_dotenv()
 
 
 def setup_logging(level: str = "INFO"):
-    """Setup logging configuration"""
+    """Setup logging configuration with file location and line numbers"""
+    # Create a custom formatter with file location
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(funcName)s() - %(message)s'
+    
+    # For development, you can use this more detailed format:
+    # log_format = '%(asctime)s - %(name)s - %(levelname)s - [%(pathname)s:%(lineno)d] - %(funcName)s() - %(message)s'
+    
     logging.basicConfig(
         level=getattr(logging, level.upper()),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        format=log_format,
         handlers=[
             logging.StreamHandler(sys.stdout),
             logging.FileHandler('claude_proxy.log')

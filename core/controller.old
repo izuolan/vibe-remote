@@ -194,7 +194,6 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                     await self.im_client.send_message(
                         target_context,
                         confirmation_text,
-                        parse_mode='markdown',
                         reply_to=user_message_ts
                     )
                 else:
@@ -203,8 +202,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                     confirmation_text = f"⏳ {formatter.format_text('Processing...')}"
                     await self.im_client.send_message(
                         target_context,
-                        confirmation_text,
-                        parse_mode='MarkdownV2'
+                        confirmation_text
                     )
             
             # Check if we have a client for this session
@@ -303,12 +301,10 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 # Format and send message
                 formatted_message = self.claude_client.format_message(message)
                 if formatted_message and formatted_message.strip():
-                    parse_mode = 'markdown' if self.config.platform == "slack" else 'MarkdownV2'
                     await self.im_client.send_message(
                         target_context,
                         formatted_message,
-                        parse_mode=parse_mode,
-                        reply_to=thread_id if self.config.platform == "slack" else None
+                        reply_to=thread_id if self.im_client.should_use_thread_for_reply() else None
                     )
                 
                 # Check if this was a ResultMessage (query complete)
@@ -325,8 +321,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                     await self.im_client.send_message(
                         target_context,
                         ready_msg,
-                        parse_mode=parse_mode,
-                        reply_to=thread_id if self.config.platform == "slack" else None
+                        reply_to=thread_id if self.im_client.should_use_thread_for_reply() else None
                     )
                     
         except asyncio.CancelledError:
@@ -344,7 +339,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 await self.im_client.send_message(
                     target_context,
                     error_msg,
-                    reply_to=thread_id if self.config.platform == "slack" else None
+                    reply_to=thread_id if self.im_client.should_use_thread_for_reply() else None
                 )
             except:
                 pass
@@ -381,7 +376,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 await self.im_client.send_message(
                     target_context,
                     error_msg,
-                    reply_to=thread_id if self.config.platform == "slack" else None
+                    reply_to=thread_id if self.im_client.should_use_thread_for_reply() else None
                 )
                 
         except Exception as e:
@@ -667,8 +662,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
         await self.im_client.send_message_with_buttons(
             target_context,
             "⚙️ *Settings \\- Message Visibility*\n\nSelect which message types to hide from Claude output:",
-            keyboard,
-            parse_mode='MarkdownV2' if self.config.platform == "telegram" else 'markdown'
+            keyboard
         )
     
     async def _handle_settings_slack(self, context: MessageContext):
@@ -703,8 +697,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             await self.im_client.send_message_with_buttons(
                 target_context,
                 "⚙️ *Personalization Settings*\n\nConfigure how Claude Code messages appear in your Slack workspace.",
-                keyboard,
-                parse_mode='MarkdownV2' if self.config.platform == "telegram" else 'markdown'
+                keyboard
             )
     
     async def handle_callback_query(self, context: MessageContext, callback_data: str):
@@ -850,8 +843,7 @@ _Tip: All commands work in DMs, channels, and threads!_"""
                     # For Slack, we might send an ephemeral message
                     await self.im_client.send_message(
                         context,
-                        f"{display_name} messages are now {action}",
-                        parse_mode='MarkdownV2' if self.config.platform == "telegram" else 'markdown'
+                        f"{display_name} messages are now {action}"
                     )
                 
             elif callback_data == "info_msg_types":

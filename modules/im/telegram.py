@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import Callable, Optional, Dict, Any
+from telegramify_markdown import markdownify
 from telegram import (
     Update,
     Bot,
@@ -15,7 +16,6 @@ from telegram.ext import (
     ContextTypes,
     CallbackQueryHandler,
 )
-from telegram.helpers import escape_markdown
 from telegram.error import TelegramError
 from config.settings import TelegramConfig
 from .base import BaseIMClient, MessageContext, InlineKeyboard, InlineButton
@@ -36,8 +36,24 @@ class TelegramBot(BaseIMClient):
         # Store callback queries for answering
         self._callback_queries: Dict[str, Any] = {}
     
+    def _convert_to_markdownv2(self, text: str) -> str:
+        """Convert markdown text to Telegram MarkdownV2 format"""
+        try:
+            # Use telegramify_markdown to convert to MarkdownV2
+            return markdownify(text)
+        except Exception as e:
+            logger.warning(f"Error converting to MarkdownV2: {e}, sending as plain text")
+            # Fallback: escape basic special characters
+            import re
+            # Escape special characters for MarkdownV2
+            escape_chars = r'_*[]()~`>#+-=|{}.!'
+            for char in escape_chars:
+                text = text.replace(char, f'\\{char}')
+            return text
+    
+    
     def get_default_parse_mode(self) -> str:
-        """Get the default parse mode for Telegram"""
+        """Get the default parse mode for Telegram - uses MarkdownV2"""
         return "MarkdownV2"
     
     def should_use_thread_for_reply(self) -> bool:
@@ -197,69 +213,6 @@ class TelegramBot(BaseIMClient):
             reply_markup=reply_markup,
         )
 
-    async def send_message_smart(
-        self, chat_id: int, text: str, message_type: str = None
-    ):
-        """Send message with smart format fallback for different message types"""
-        bot = self.application.bot
-
-        # Split long messages
-        if len(text) > 4000:
-            for i in range(0, len(text), 4000):
-                await self.send_message_smart(chat_id, text[i : i + 4000], message_type)
-                await asyncio.sleep(0.1)
-            return
-
-        # For result messages, try to preserve formatting
-        if message_type == "result":
-            # Try original Markdown first
-            try:
-                await bot.send_message(
-                    chat_id=chat_id, text=text, parse_mode="Markdown"
-                )
-                return
-            except TelegramError:
-                pass
-
-            # Try HTML as fallback
-            try:
-                # Simple Markdown to HTML conversion
-                html_text = self._markdown_to_html(text)
-                await bot.send_message(
-                    chat_id=chat_id, text=html_text, parse_mode="HTML"
-                )
-                return
-            except TelegramError:
-                pass
-
-        # Default to escaped MarkdownV2 for all other cases
-        try:
-            await bot.send_message(chat_id=chat_id, text=text, parse_mode="MarkdownV2")
-        except TelegramError:
-            # Last resort: send as plain text
-            await bot.send_message(chat_id=chat_id, text=text)
-
-    def _markdown_to_html(self, text: str) -> str:
-        """Simple Markdown to HTML conversion for common patterns"""
-        import re
-
-        # First escape HTML entities
-        text = text.replace("&", "&amp;")
-        text = text.replace("<", "&lt;")
-        text = text.replace(">", "&gt;")
-
-        # Convert code blocks (must be done before inline code)
-        text = re.sub(r"```([^`]+)```", r"<pre>\1</pre>", text, flags=re.DOTALL)
-        text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
-
-        # Convert bold and italic
-        text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
-        text = re.sub(r"\*([^*]+)\*", r"<i>\1</i>", text)
-
-        # Convert links
-        text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
-
-        return text
 
     def run(self):
         """Run the bot with infinite retry mechanism"""
@@ -310,22 +263,12 @@ class TelegramBot(BaseIMClient):
         # Convert MessageContext to Telegram chat_id
         chat_id = int(context.channel_id)
 
-        # Handle thread_id as reply_to_message_id in Telegram
-        kwargs = {"chat_id": chat_id, "text": text}
+        # Convert markdown to MarkdownV2 for better compatibility
+        markdownv2_text = self._convert_to_markdownv2(text)
+        kwargs = {"chat_id": chat_id, "text": markdownv2_text}
 
-        # Default to MarkdownV2 for Telegram if not specified
-        if parse_mode:
-            # Handle different parse modes:
-            # 'markdown' (from Slack) -> 'Markdown' (Telegram v1)
-            # 'Markdown' -> keep as is (Telegram v1)
-            # 'MarkdownV2' -> keep as is (Telegram v2)
-            if parse_mode == "markdown":
-                kwargs["parse_mode"] = "Markdown"
-            else:
-                kwargs["parse_mode"] = parse_mode
-        else:
-            # Default to MarkdownV2 for all messages
-            kwargs["parse_mode"] = "MarkdownV2"
+        # Use MarkdownV2 parse mode
+        kwargs["parse_mode"] = parse_mode or "MarkdownV2"
 
         if reply_to or context.thread_id:
             kwargs["reply_to_message_id"] = int(reply_to or context.thread_id)
@@ -347,11 +290,8 @@ class TelegramBot(BaseIMClient):
         """Send a message with inline buttons - BaseIMClient implementation"""
         bot = self.application.bot
 
-        # Default to MarkdownV2 if not specified
-        if not parse_mode:
-            parse_mode = "MarkdownV2"
-        elif parse_mode == "markdown":
-            parse_mode = "Markdown"
+        # Convert markdown to MarkdownV2 for better compatibility
+        markdownv2_text = self._convert_to_markdownv2(text)
 
         # Convert our generic keyboard to Telegram keyboard
         tg_keyboard = []
@@ -371,8 +311,8 @@ class TelegramBot(BaseIMClient):
         try:
             message = await bot.send_message(
                 chat_id=chat_id,
-                text=text,
-                parse_mode="Markdown" if parse_mode == "markdown" else parse_mode,
+                text=markdownv2_text,
+                parse_mode="MarkdownV2",
                 reply_markup=reply_markup,
             )
             return str(message.message_id)
@@ -497,12 +437,11 @@ class TelegramBot(BaseIMClient):
             raise
 
     def format_markdown(self, text: str) -> str:
-        """Format markdown text for Telegram using TelegramFormatter
-
-        This properly escapes special characters for MarkdownV2
+        """Format markdown text for Telegram using telegramify_markdown
+        
+        Converts standard markdown to Telegram's MarkdownV2 format
         """
-        # Use the formatter to properly escape text
-        return self.formatter.escape_special_chars(text)
+        return self._convert_to_markdownv2(text)
 
     def _is_authorized_chat(self, chat_id: int, chat_type: str) -> bool:
         """Check if a chat is authorized based on whitelist configuration"""

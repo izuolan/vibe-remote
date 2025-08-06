@@ -14,8 +14,8 @@ class UserSettings:
     """User personalization settings"""
     hidden_message_types: List[str] = field(default_factory=list)  # Message types to hide
     custom_cwd: Optional[str] = None  # Custom working directory
-    # Map of IM session ID (chat_id/thread_id) to Claude session_id
-    session_mappings: Dict[str, str] = field(default_factory=dict)
+    # Nested map: {base_session_id: {working_path: claude_session_id}}
+    session_mappings: Dict[str, Dict[str, str]] = field(default_factory=dict)
     
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization"""
@@ -70,10 +70,38 @@ class SettingsManager:
     
     def get_user_settings(self, user_id: Union[int, str]) -> UserSettings:
         """Get settings for a specific user"""
-        if user_id not in self.settings:
-            self.settings[user_id] = UserSettings()
-            self._save_settings()
-        return self.settings[user_id]
+        # Normalize user_id to handle both int and string forms
+        normalized_id = user_id
+        
+        # For Telegram, try to find by both int and string forms
+        if isinstance(user_id, str) and user_id.isdigit():
+            # Try as int first
+            int_id = int(user_id)
+            if int_id in self.settings:
+                return self.settings[int_id]
+            # Also check string form
+            if user_id in self.settings:
+                return self.settings[user_id]
+            # Use int form for Telegram
+            normalized_id = int_id
+        elif isinstance(user_id, int):
+            # Check if exists as int
+            if user_id in self.settings:
+                return self.settings[user_id]
+            # Also check string form
+            str_id = str(user_id)
+            if str_id in self.settings:
+                return self.settings[str_id]
+            normalized_id = user_id
+        else:
+            # For Slack and other platforms, keep as string
+            if user_id in self.settings:
+                return self.settings[user_id]
+        
+        # Create new settings if not found
+        self.settings[normalized_id] = UserSettings()
+        self._save_settings()
+        return self.settings[normalized_id]
     
     def update_user_settings(self, user_id: Union[int, str], settings: UserSettings):
         """Update settings for a specific user"""
@@ -132,22 +160,33 @@ class SettingsManager:
             "result": "Result"
         }
     
-    def set_session_mapping(self, user_id: Union[int, str], im_session_id: str, claude_session_id: str):
-        """Store mapping between IM session ID and Claude session ID"""
+    def set_session_mapping(self, user_id: Union[int, str], base_session_id: str, working_path: str, claude_session_id: str):
+        """Store mapping between base session ID, working path, and Claude session ID"""
         settings = self.get_user_settings(user_id)
-        settings.session_mappings[im_session_id] = claude_session_id
+        if base_session_id not in settings.session_mappings:
+            settings.session_mappings[base_session_id] = {}
+        settings.session_mappings[base_session_id][working_path] = claude_session_id
         self.update_user_settings(user_id, settings)
-        logger.info(f"Stored session mapping for user {user_id}: {im_session_id} -> {claude_session_id}")
+        logger.info(f"Stored session mapping for user {user_id}: {base_session_id}[{working_path}] -> {claude_session_id}")
     
-    def get_claude_session_id(self, user_id: Union[int, str], im_session_id: str) -> Optional[str]:
-        """Get Claude session ID for given IM session ID"""
+    def get_claude_session_id(self, user_id: Union[int, str], base_session_id: str, working_path: str) -> Optional[str]:
+        """Get Claude session ID for given base session ID and working path"""
         settings = self.get_user_settings(user_id)
-        return settings.session_mappings.get(im_session_id)
+        if base_session_id in settings.session_mappings:
+            return settings.session_mappings[base_session_id].get(working_path)
+        return None
     
-    def clear_session_mapping(self, user_id: Union[int, str], im_session_id: str):
-        """Clear session mapping for given IM session ID"""
+    def clear_session_mapping(self, user_id: Union[int, str], base_session_id: str, working_path: Optional[str] = None):
+        """Clear session mapping for given base session ID and optionally working path"""
         settings = self.get_user_settings(user_id)
-        if im_session_id in settings.session_mappings:
-            del settings.session_mappings[im_session_id]
+        if base_session_id in settings.session_mappings:
+            if working_path:
+                # Clear specific path mapping
+                if working_path in settings.session_mappings[base_session_id]:
+                    del settings.session_mappings[base_session_id][working_path]
+                    logger.info(f"Cleared session mapping for user {user_id}: {base_session_id}[{working_path}]")
+            else:
+                # Clear all mappings for this base session
+                del settings.session_mappings[base_session_id]
+                logger.info(f"Cleared all session mappings for user {user_id}: {base_session_id}")
             self.update_user_settings(user_id, settings)
-            logger.info(f"Cleared session mapping for user {user_id}: {im_session_id}")
