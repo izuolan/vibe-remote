@@ -18,6 +18,19 @@ class CommandHandlers:
         self.im_client = controller.im_client
         self.session_manager = controller.session_manager
         self.settings_manager = controller.settings_manager
+    
+    def _get_channel_context(self, context: MessageContext) -> MessageContext:
+        """Get context for channel messages (no thread)"""
+        # For Slack: send command responses directly to channel, not in thread
+        if self.config.platform == "slack":
+            return MessageContext(
+                user_id=context.user_id,
+                channel_id=context.channel_id,
+                thread_id=None,  # No thread for command responses
+                platform_specific=context.platform_specific
+            )
+        # For other platforms, keep original context
+        return context
 
     async def handle_start(self, context: MessageContext, args: str = ""):
         """Handle /start command with interactive buttons"""
@@ -73,7 +86,8 @@ class CommandHandlers:
             ]
 
             message_text = formatter.format_message(*lines)
-            await self.im_client.send_message(context, message_text)
+            channel_context = self._get_channel_context(context)
+            await self.im_client.send_message(channel_context, message_text)
             return
 
         # For Slack, create interactive buttons using Block Kit
@@ -106,9 +120,10 @@ class CommandHandlers:
 **Quick Actions:**
 Use the buttons below to manage your Claude Code sessions, or simply type any message to start chatting with Claude!"""
 
-        target_context = self.controller._get_target_context(context)
+        # Send command response to channel (not in thread)
+        channel_context = self._get_channel_context(context)
         await self.im_client.send_message_with_buttons(
-            target_context, welcome_text, keyboard
+            channel_context, welcome_text, keyboard
         )
 
     async def handle_clear(self, context: MessageContext, args: str = ""):
@@ -134,14 +149,16 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             full_response = f"{response}\n🔄 Claude session has been reset."
 
             # Send the complete response
-            await self.im_client.send_message(context, full_response)
+            channel_context = self._get_channel_context(context)
+            await self.im_client.send_message(channel_context, full_response)
             logger.info(f"Sent clear response to user {context.user_id}")
 
         except Exception as e:
             logger.error(f"Error clearing session: {e}", exc_info=True)
             try:
+                channel_context = self._get_channel_context(context)
                 await self.im_client.send_message(
-                    context, f"❌ Error clearing session: {str(e)}"
+                    channel_context, f"❌ Error clearing session: {str(e)}"
                 )
             except Exception as send_error:
                 logger.error(
@@ -151,9 +168,8 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
     async def handle_cwd(self, context: MessageContext, args: str = ""):
         """Handle cwd command - show current working directory"""
         try:
-            # Simple: use the single global CWD
-            current_cwd = self.config.claude.cwd
-            absolute_path = os.path.abspath(current_cwd)
+            # Get CWD based on context (channel/chat)
+            absolute_path = self.controller.get_cwd(context)
 
             # Build response using formatter to avoid escaping issues
             formatter = self.im_client.formatter
@@ -173,18 +189,21 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             # Combine all parts
             response_text = path_line + "\n" + "\n".join(status_lines)
 
-            await self.im_client.send_message(context, response_text)
+            channel_context = self._get_channel_context(context)
+            await self.im_client.send_message(channel_context, response_text)
         except Exception as e:
             logger.error(f"Error getting cwd: {e}")
+            channel_context = self._get_channel_context(context)
             await self.im_client.send_message(
-                context, f"Error getting working directory: {str(e)}"
+                channel_context, f"Error getting working directory: {str(e)}"
             )
 
     async def handle_set_cwd(self, context: MessageContext, args: str):
         """Handle set_cwd command - change working directory"""
         try:
             if not args:
-                await self.im_client.send_message(context, "Usage: /set_cwd <path>")
+                channel_context = self._get_channel_context(context)
+                await self.im_client.send_message(channel_context, "Usage: /set_cwd <path>")
                 return
 
             new_path = args.strip()
@@ -200,25 +219,22 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                     os.makedirs(absolute_path, exist_ok=True)
                     logger.info(f"Created directory: {absolute_path}")
                 except Exception as e:
+                    channel_context = self._get_channel_context(context)
                     await self.im_client.send_message(
-                        context, f"❌ Cannot create directory: {str(e)}"
+                        channel_context, f"❌ Cannot create directory: {str(e)}"
                     )
                     return
 
             if not os.path.isdir(absolute_path):
                 formatter = self.im_client.formatter
                 error_text = f"❌ Path exists but is not a directory: {formatter.format_code_inline(absolute_path)}"
-                await self.im_client.send_message(context, error_text)
+                channel_context = self._get_channel_context(context)
+                await self.im_client.send_message(channel_context, error_text)
                 return
 
-            # Update the global config directly
-            self.config.claude.cwd = absolute_path
-
-            # Also save to user settings for persistence
+            # Save to user settings
             settings_key = self.controller._get_settings_key(context)
-            settings = self.settings_manager.get_user_settings(settings_key)
-            settings.custom_cwd = absolute_path
-            self.settings_manager.update_user_settings(settings_key, settings)
+            self.settings_manager.set_custom_cwd(settings_key, absolute_path)
 
             logger.info(f"User {context.user_id} changed cwd to: {absolute_path}")
 
@@ -227,20 +243,23 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 f"✅ Working directory changed to:\n"
                 f"{formatter.format_code_inline(absolute_path)}"
             )
-            await self.im_client.send_message(context, response_text)
+            channel_context = self._get_channel_context(context)
+            await self.im_client.send_message(channel_context, response_text)
 
         except Exception as e:
             logger.error(f"Error setting cwd: {e}")
+            channel_context = self._get_channel_context(context)
             await self.im_client.send_message(
-                context, f"❌ Error setting working directory: {str(e)}"
+                channel_context, f"❌ Error setting working directory: {str(e)}"
             )
 
     async def handle_change_cwd_modal(self, context: MessageContext):
         """Handle Change Work Dir button - open modal for Slack"""
         if self.config.platform != "slack":
             # For non-Slack platforms, just send instructions
+            channel_context = self._get_channel_context(context)
             await self.im_client.send_message(
-                context,
+                channel_context,
                 "📂 To change working directory, use:\n`/set_cwd <path>`\n\nExample:\n`/set_cwd ~/projects/myapp`",
             )
             return
@@ -254,21 +273,23 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
 
         if trigger_id and hasattr(self.im_client, "open_change_cwd_modal"):
             try:
-                # Get current CWD to show in modal
-                current_cwd = self.config.claude.cwd
+                # Get current CWD based on context
+                current_cwd = self.controller.get_cwd(context)
 
                 await self.im_client.open_change_cwd_modal(
                     trigger_id, current_cwd, context.channel_id
                 )
             except Exception as e:
                 logger.error(f"Error opening change CWD modal: {e}")
+                channel_context = self._get_channel_context(context)
                 await self.im_client.send_message(
-                    context,
+                    channel_context,
                     "❌ Failed to open directory change dialog. Please try again.",
                 )
         else:
             # No trigger_id, show instructions
+            channel_context = self._get_channel_context(context)
             await self.im_client.send_message(
-                context,
+                channel_context,
                 "📂 Click the 'Change Work Dir' button in the /start menu to change working directory.",
             )

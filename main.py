@@ -5,7 +5,7 @@ import logging
 import asyncio
 from dotenv import load_dotenv
 from config.settings import AppConfig
-from core.controller_refactored import Controller
+from core.controller import Controller
 
 # Load environment variables from .env file
 load_dotenv()

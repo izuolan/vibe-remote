@@ -356,10 +356,13 @@ class SlackBot(BaseIMClient):
                 return
             
             # Extract context
+            # For Slack: if no thread_ts, use the message's own ts as thread_id (start of thread)
+            thread_id = event.get("thread_ts") or event.get("ts")
+            
             context = MessageContext(
                 user_id=event.get("user"),
                 channel_id=channel_id,
-                thread_id=event.get("thread_ts"),
+                thread_id=thread_id,  # Always have a thread_id
                 message_id=event.get("ts"),
                 platform_specific={
                     "team_id": payload.get("team_id"),
@@ -392,10 +395,13 @@ class SlackBot(BaseIMClient):
                 await self._send_unauthorized_message(channel_id)
                 return
             
+            # For Slack: if no thread_ts, use the message's own ts as thread_id (start of thread)
+            thread_id = event.get("thread_ts") or event.get("ts")
+            
             context = MessageContext(
                 user_id=event.get("user"),
                 channel_id=channel_id,
-                thread_id=event.get("thread_ts"),
+                thread_id=thread_id,  # Always have a thread_id
                 message_id=event.get("ts"),
                 platform_specific={
                     "team_id": payload.get("team_id"),

@@ -25,16 +25,8 @@ class SessionHandler:
         self.stored_session_mappings = controller.stored_session_mappings
     
     def _get_settings_key(self, context: MessageContext) -> str:
-        """Get settings key based on context"""
-        if self.config.platform == "slack":
-            # For Slack, always use channel_id as the key
-            return context.channel_id
-        elif self.config.platform == "telegram":
-            # For Telegram groups, use channel_id; for DMs use user_id
-            if context.channel_id != context.user_id:
-                return context.channel_id
-            return context.user_id
-        return context.user_id
+        """Get settings key - delegate to controller"""
+        return self.controller._get_settings_key(context)
     
     def get_base_session_id(self, context: MessageContext) -> str:
         """Get base session ID based on platform and context (without path)"""
@@ -42,27 +34,20 @@ class SessionHandler:
             # For Telegram, use channel/chat ID
             return f"telegram_{context.channel_id}"
         elif self.config.platform == "slack":
-            # For Slack, use thread ID if available, otherwise channel ID
-            if context.thread_id:
-                return f"slack_{context.thread_id}"
-            else:
-                return f"slack_{context.channel_id}"
+            # For Slack, always use thread ID (now always available)
+            return f"slack_{context.thread_id}"
         else:
             # Default to user ID
             return f"{self.config.platform}_{context.user_id}"
     
-    def get_working_path(self, context: Optional[MessageContext] = None) -> str:
-        """Get normalized working directory path - always use the global config"""
-        # Simple and clear: always use the single source of truth
-        working_dir = self.config.claude.cwd
-        if working_dir:
-            return os.path.abspath(os.path.expanduser(working_dir))
-        return os.getcwd()
+    def get_working_path(self, context: MessageContext) -> str:
+        """Get working directory - delegate to controller's get_cwd"""
+        return self.controller.get_cwd(context)
     
     def get_session_info(self, context: MessageContext) -> Tuple[str, str, str]:
         """Get session info: base_session_id, working_path, and composite_key"""
         base_session_id = self.get_base_session_id(context)
-        working_path = self.get_working_path()  # No need to pass context anymore
+        working_path = self.get_working_path(context)  # Pass context to get user's custom_cwd
         # Create composite key for internal storage
         composite_key = f"{base_session_id}:{working_path}"
         return base_session_id, working_path, composite_key

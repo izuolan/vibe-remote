@@ -44,11 +44,8 @@ class Controller:
         # Background task for cleanup
         self.cleanup_task: Optional[asyncio.Task] = None
         
-        # Restore session mappings on startup
+        # Restore session mappings on startup (after handlers are initialized)
         self.session_handler.restore_session_mappings()
-        
-        # Restore last saved working directory
-        self._restore_saved_cwd()
     
     def _init_modules(self):
         """Initialize core modules"""
@@ -74,8 +71,9 @@ class Controller:
     
     def _init_handlers(self):
         """Initialize all handlers with controller reference"""
-        self.command_handler = CommandHandlers(self)
+        # Initialize session_handler first as other handlers depend on it
         self.session_handler = SessionHandler(self)
+        self.command_handler = CommandHandlers(self)
         self.settings_handler = SettingsHandler(self)
         self.message_handler = MessageHandler(self)
         
@@ -103,42 +101,30 @@ class Controller:
         )
     
     # Utility methods used by handlers
-    def _restore_saved_cwd(self):
-        """Restore saved working directory to the global config on startup"""
-        try:
-            # Find the most appropriate saved CWD and apply it globally
-            all_settings = self.settings_manager.settings
-            saved_cwd = None
-            
-            # For Slack: prefer channel settings over user settings
-            # For Telegram: use any saved custom_cwd
-            for settings_key, user_settings in all_settings.items():
-                if hasattr(user_settings, 'custom_cwd') and user_settings.custom_cwd:
-                    if self.config.platform == "slack":
-                        # Prefer channel settings (start with 'C') over user settings
-                        if settings_key.startswith('C'):
-                            saved_cwd = user_settings.custom_cwd
-                            logger.info(f"Found saved CWD from Slack channel {settings_key}: {saved_cwd}")
-                            break
-                        elif not saved_cwd:  # Use user setting as fallback
-                            saved_cwd = user_settings.custom_cwd
-                    else:  # Telegram or other platforms
-                        saved_cwd = user_settings.custom_cwd
-                        logger.info(f"Found saved CWD from {settings_key}: {saved_cwd}")
-                        break
-            
-            # Apply the saved CWD globally if found and exists
-            if saved_cwd and os.path.exists(saved_cwd):
-                self.config.claude.cwd = saved_cwd
-                logger.info(f"✅ Restored global working directory to: {saved_cwd}")
-            else:
-                if saved_cwd:
-                    logger.warning(f"Saved CWD does not exist: {saved_cwd}, using default")
-                logger.info(f"Using default working directory from .env: {self.config.claude.cwd}")
-                
-        except Exception as e:
-            logger.error(f"Error restoring saved working directory: {e}")
-            # Continue with default from .env
+    
+    def get_cwd(self, context: MessageContext) -> str:
+        """Get working directory based on context (channel/chat)
+        This is the SINGLE source of truth for CWD
+        """
+        # Get the settings key based on context
+        settings_key = self._get_settings_key(context)
+        
+        # Get custom CWD from settings
+        custom_cwd = self.settings_manager.get_custom_cwd(settings_key)
+        
+        # Use custom CWD if available, otherwise use default from .env
+        if custom_cwd and os.path.exists(custom_cwd):
+            return os.path.abspath(custom_cwd)
+        elif custom_cwd:
+            logger.warning(f"Custom CWD does not exist: {custom_cwd}, using default")
+        
+        # Fall back to default from .env
+        default_cwd = self.config.claude.cwd
+        if default_cwd:
+            return os.path.abspath(os.path.expanduser(default_cwd))
+        
+        # Last resort: current directory
+        return os.getcwd()
     
     def _get_settings_key(self, context: MessageContext) -> str:
         """Get settings key based on context"""
@@ -159,7 +145,7 @@ class Controller:
                 user_id=context.user_id,
                 channel_id=context.channel_id,
                 thread_id=context.thread_id,
-                message=context.message,
+                message_id=context.message_id,
                 platform_specific=context.platform_specific
             )
         return context

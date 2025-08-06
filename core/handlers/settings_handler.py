@@ -18,16 +18,8 @@ class SettingsHandler:
         self.formatter = controller.im_client.formatter
     
     def _get_settings_key(self, context: MessageContext) -> str:
-        """Get settings key based on context"""
-        if self.config.platform == "slack":
-            # For Slack, always use channel_id as the key
-            return context.channel_id
-        elif self.config.platform == "telegram":
-            # For Telegram groups, use channel_id; for DMs use user_id
-            if context.channel_id != context.user_id:
-                return context.channel_id
-            return context.user_id
-        return context.user_id
+        """Get settings key - delegate to controller"""
+        return self.controller._get_settings_key(context)
     
     async def handle_settings(self, context: MessageContext, args: str = ""):
         """Handle settings command - show settings menu"""

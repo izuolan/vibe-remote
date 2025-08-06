@@ -27,16 +27,8 @@ class MessageHandler:
         self.session_handler = session_handler
     
     def _get_settings_key(self, context: MessageContext) -> str:
-        """Get settings key based on context"""
-        if self.config.platform == "slack":
-            # For Slack, always use channel_id as the key
-            return context.channel_id
-        elif self.config.platform == "telegram":
-            # For Telegram groups, use channel_id; for DMs use user_id
-            if context.channel_id != context.user_id:
-                return context.channel_id
-            return context.user_id
-        return context.user_id
+        """Get settings key - delegate to controller"""
+        return self.controller._get_settings_key(context)
     
     def _get_target_context(self, context: MessageContext) -> MessageContext:
         """Get target context for sending messages"""
@@ -46,17 +38,16 @@ class MessageHandler:
                 user_id=context.user_id,
                 channel_id=context.channel_id,
                 thread_id=context.thread_id,
-                message=context.message,
+                message_id=context.message_id,
                 platform_specific=context.platform_specific
             )
         return context
     
-    def get_relative_path(self, abs_path: str) -> str:
+    def get_relative_path(self, abs_path: str, context: MessageContext = None) -> str:
         """Convert absolute path to relative path from working directory"""
         try:
-            # Always use config.claude.cwd as the single source of truth
-            cwd = self.config.claude.cwd
-            cwd = os.path.abspath(os.path.expanduser(cwd))
+            # Use unified method to get working path
+            cwd = self.session_handler.get_working_path(context)
             
             # Convert input path to absolute
             abs_path = os.path.abspath(os.path.expanduser(abs_path))
