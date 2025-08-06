@@ -206,10 +206,15 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 # Check if we have a saved Claude session_id to resume
                 claude_session_id = self.settings_manager.get_claude_session_id(context.user_id, session_id)
                 
+                # Get user's custom CWD from settings if available
+                settings_key = self._get_settings_key(context)
+                custom_cwd = self.settings_manager.get_custom_cwd(settings_key)
+                working_directory = custom_cwd if custom_cwd else self.config.claude.cwd
+                
                 # Create new Claude SDK client with resume if available
                 options = ClaudeCodeOptions(
                     permission_mode=self.config.claude.permission_mode,
-                    cwd=self.config.claude.cwd,
+                    cwd=working_directory,
                     system_prompt=self.config.claude.system_prompt,
                     # Use resume instead of continue_conversation
                     resume=claude_session_id if claude_session_id else None
@@ -330,16 +335,6 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
         try:
             # Get session
             session = await self.session_manager.get_or_create_session(context.user_id, context.channel_id)
-            
-            # Get user's CWD from settings if available
-            settings_key = self._get_settings_key(context)
-            custom_cwd = self.settings_manager.get_custom_cwd(settings_key)
-            
-            # Update Claude options with custom CWD
-            if custom_cwd:
-                self.claude_client.options.cwd = custom_cwd
-            else:
-                self.claude_client.options.cwd = self.config.claude.cwd
             
             # Get the client for this session
             client = session.claude_clients[session_id]
