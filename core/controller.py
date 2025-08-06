@@ -768,9 +768,10 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
 
 _Tip: All commands work in DMs, channels, and threads!_"""
                 
-                    parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
-                    await self.im_client.send_message(context, info_text, parse_mode=parse_mode)
-                    return
+                # Send the info message for either info button
+                parse_mode = 'Markdown' if self.config.platform == "telegram" else 'markdown'
+                await self.im_client.send_message(context, info_text, parse_mode=parse_mode)
+                return
             
             # Handle settings toggle buttons (existing functionality)
             if callback_data.startswith("toggle_msg_"):

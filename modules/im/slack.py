@@ -45,6 +45,35 @@ class SlackBot(BaseIMClient):
                 app_token=self.config.app_token,
                 web_client=self.web_client
             )
+    
+    def _convert_markdown_to_slack_mrkdwn(self, text: str) -> str:
+        """Convert standard markdown to Slack mrkdwn format
+        
+        Main differences:
+        - Bold: ** to *
+        - Italic: * to _
+        - No need to escape parentheses
+        """
+        import re
+        
+        # Strategy: First handle italic (single *), then bold (double **)
+        # This prevents the bold conversion from affecting italic markers
+        
+        # Step 1: Temporarily replace single asterisks with a placeholder for italic
+        # Match single * that are not preceded or followed by another *
+        text = re.sub(r'(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)', r'ITALIC_START\1ITALIC_END', text)
+        
+        # Step 2: Convert bold (**text** to *text*)
+        text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+        
+        # Step 3: Convert the italic placeholders to underscores
+        text = text.replace('ITALIC_START', '_').replace('ITALIC_END', '_')
+        
+        # Remove unnecessary escaping of parentheses and dots
+        text = text.replace(r'\(', '(').replace(r'\)', ')')
+        text = text.replace(r'\.', '.')
+        
+        return text
         
     async def send_message(self, context: MessageContext, text: str,
                           parse_mode: Optional[str] = None,
@@ -52,6 +81,10 @@ class SlackBot(BaseIMClient):
         """Send a message to Slack"""
         self._ensure_clients()
         try:
+            # Convert markdown to Slack mrkdwn if needed
+            if parse_mode == 'markdown':
+                text = self._convert_markdown_to_slack_mrkdwn(text)
+            
             # Prepare message kwargs
             kwargs = {
                 'channel': context.channel_id,
@@ -87,6 +120,10 @@ class SlackBot(BaseIMClient):
         """Send a message with interactive buttons"""
         self._ensure_clients()
         try:
+            # Convert markdown to Slack mrkdwn if needed
+            if parse_mode == 'markdown':
+                text = self._convert_markdown_to_slack_mrkdwn(text)
+            
             # Convert our generic keyboard to Slack blocks
             blocks = [
                 {
