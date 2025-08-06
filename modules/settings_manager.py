@@ -42,6 +42,15 @@ class SettingsManager:
                 with open(self.settings_file, 'r') as f:
                     data = json.load(f)
                     for user_id_str, user_data in data.items():
+                        # Clean up old format session mappings, only keep nested dict format
+                        if 'session_mappings' in user_data:
+                            cleaned_mappings = {}
+                            for key, value in user_data['session_mappings'].items():
+                                # Only keep nested dictionary format
+                                if isinstance(value, dict):
+                                    cleaned_mappings[key] = value
+                            user_data['session_mappings'] = cleaned_mappings
+                        
                         # Try to convert to int for Telegram, keep as string for Slack
                         try:
                             user_id = int(user_id_str)
