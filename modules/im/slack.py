@@ -6,6 +6,7 @@ from slack_sdk.socket_mode.aiohttp import SocketModeClient
 from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.errors import SlackApiError
+from markdown_to_mrkdwn import SlackMarkdownConverter
 
 from .base import BaseIMClient, MessageContext, InlineKeyboard, InlineButton
 from config.settings import SlackConfig
@@ -25,6 +26,9 @@ class SlackBot(BaseIMClient):
         
         # Initialize Slack formatter
         self.formatter = SlackFormatter()
+        
+        # Initialize markdown to mrkdwn converter
+        self.markdown_converter = SlackMarkdownConverter()
         
         # Note: Thread handling now uses user's message timestamp directly
         
@@ -55,72 +59,25 @@ class SlackBot(BaseIMClient):
             )
     
     def _convert_markdown_to_slack_mrkdwn(self, text: str) -> str:
-        """Convert standard markdown to Slack mrkdwn format
+        """Convert standard markdown to Slack mrkdwn format using third-party library
         
-        Main differences:
+        Uses markdown-to-mrkdwn library for comprehensive conversion including:
         - Bold: ** to *
         - Italic: * to _  
+        - Strikethrough: ~~ to ~
         - Code blocks: ``` preserved
         - Inline code: ` preserved
         - Links: [text](url) to <url|text>
-        - No need to escape parentheses
+        - Headers, lists, quotes, and more
         """
-        import re
-        
-        # Protect code blocks and inline code from conversion
-        # Store them temporarily and restore after other conversions
-        code_blocks = []
-        inline_codes = []
-        
-        # Step 1: Extract and protect code blocks (```)
-        def save_code_block(match):
-            code_blocks.append(match.group(0))
-            return f"CODE_BLOCK_{len(code_blocks)-1}_PLACEHOLDER"
-        
-        text = re.sub(r'```[\s\S]*?```', save_code_block, text)
-        
-        # Step 2: Extract and protect inline code (`)
-        def save_inline_code(match):
-            inline_codes.append(match.group(0))
-            return f"INLINE_CODE_{len(inline_codes)-1}_PLACEHOLDER"
-        
-        text = re.sub(r'`[^`]+`', save_inline_code, text)
-        
-        # Step 3: Convert links [text](url) to <url|text>
-        text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<\2|\1>', text)
-        
-        # Step 4: Convert bold first (**text** to *text*)
-        # This must be done before handling italic to avoid conflicts
-        text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
-        
-        # Step 5: Handle italic (convert remaining _text_ format)
-        # In standard markdown, italic can be *text* or _text_
-        # Since we've already converted bold (**) to (*), we should not touch single *
-        # Instead, only handle underscore format for italic
-        # No conversion needed as Slack already uses _ for italic
-        
-        # Step 6: No additional conversion needed for italic
-        
-        # Step 7: Convert headers (# Header to *Header*)
-        # Slack doesn't have headers, so we make them bold
-        text = re.sub(r'^#{1,6}\s+(.+)$', r'*\1*', text, flags=re.MULTILINE)
-        
-        # Step 8: Convert unordered lists (* item or - item to • item)
-        # But don't convert bold markers
-        text = re.sub(r'^[-\*]\s+', '• ', text, flags=re.MULTILINE)
-        
-        # Step 9: Restore code blocks and inline code
-        for i, code_block in enumerate(code_blocks):
-            text = text.replace(f"CODE_BLOCK_{i}_PLACEHOLDER", code_block)
-        
-        for i, inline_code in enumerate(inline_codes):
-            text = text.replace(f"INLINE_CODE_{i}_PLACEHOLDER", inline_code)
-        
-        # Step 10: Remove unnecessary escaping of parentheses and dots
-        text = text.replace(r'\(', '(').replace(r'\)', ')')
-        text = text.replace(r'\.', '.')
-        
-        return text
+        try:
+            # Use the third-party converter for comprehensive markdown to mrkdwn conversion
+            converted_text = self.markdown_converter.convert(text)
+            return converted_text
+        except Exception as e:
+            logger.warning(f"Error converting markdown to mrkdwn: {e}, using original text")
+            # Fallback to original text if conversion fails
+            return text
         
     async def send_message(self, context: MessageContext, text: str,
                           parse_mode: Optional[str] = None,

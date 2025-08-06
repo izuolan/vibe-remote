@@ -149,9 +149,14 @@ class MessageHandler:
                     if hasattr(self.controller, 'claude_client'):
                         formatted_message = self.controller.claude_client.format_message(message)
                         if formatted_message and formatted_message.strip():
+                            # Add separator line for Slack to improve message separation
+                            if self.config.platform == "slack":
+                                formatted_message = formatted_message + "\n---"
+                            
                             await self.im_client.send_message(
                                 target_context,
-                                formatted_message
+                                formatted_message,
+                                parse_mode='markdown'
                             )
                     
                     # Check if this was a ResultMessage (query complete)
