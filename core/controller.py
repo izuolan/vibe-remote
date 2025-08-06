@@ -79,24 +79,30 @@ class Controller:
         
         # For non-Slack platforms, use traditional text message
         if self.config.platform != "slack":
-            message_text = f"""Welcome to Claude Code Remote Control Bot!
-
-Platform: {platform_name}
-User ID: {context.user_id}
-Channel/Chat ID: {context.channel_id}
-
-Commands:
-/start - Show this message
-/clear - Reset session and start fresh
-/cwd - Show current working directory
-/set_cwd <path> - Set working directory
-/settings - Personalization settings
-
-How it works:
-• Send any message and it's immediately sent to Claude Code
-• Each chat maintains its own conversation context
-• Use /clear to reset the conversation"""
+            formatter = self.im_client.formatter
             
+            # Build welcome message using formatter to handle escaping properly
+            lines = [
+                formatter.format_bold("Welcome to Claude Code Remote Control Bot!"),
+                "",
+                f"Platform: {formatter.format_text(platform_name)}",
+                f"User ID: {formatter.format_code_inline(context.user_id)}",
+                f"Channel/Chat ID: {formatter.format_code_inline(context.channel_id)}",
+                "",
+                formatter.format_bold("Commands:"),
+                formatter.format_text("/start - Show this message"),
+                formatter.format_text("/clear - Reset session and start fresh"),
+                formatter.format_text("/cwd - Show current working directory"),
+                formatter.format_text("/set_cwd <path> - Set working directory"),
+                formatter.format_text("/settings - Personalization settings"),
+                "",
+                formatter.format_bold("How it works:"),
+                formatter.format_text("• Send any message and it's immediately sent to Claude Code"),
+                formatter.format_text("• Each chat maintains its own conversation context"),
+                formatter.format_text("• Use /clear to reset the conversation")
+            ]
+            
+            message_text = formatter.format_message(*lines)
             await self.im_client.send_message(context, message_text)
             return
         
