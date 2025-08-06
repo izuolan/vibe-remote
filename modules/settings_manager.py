@@ -199,3 +199,12 @@ class SettingsManager:
                 del settings.session_mappings[base_session_id]
                 logger.info(f"Cleared all session mappings for user {user_id}: {base_session_id}")
             self.update_user_settings(user_id, settings)
+    
+    def clear_all_session_mappings(self, user_id: Union[int, str]):
+        """Clear all session mappings for a user"""
+        settings = self.get_user_settings(user_id)
+        if settings.session_mappings:
+            count = len(settings.session_mappings)
+            settings.session_mappings.clear()
+            logger.info(f"Cleared all {count} session mappings for user {user_id}")
+            self.update_user_settings(user_id, settings)

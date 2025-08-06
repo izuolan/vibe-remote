@@ -102,7 +102,7 @@ class CommandHandlers:
             ],
             # Row 2: Session and Settings
             [
-                InlineButton(text="🔄 Reset Session", callback_data="cmd_clear"),
+                InlineButton(text="🔄 Clear All Session", callback_data="cmd_clear"),
                 InlineButton(text="⚙️ Settings", callback_data="cmd_settings"),
             ],
             # Row 3: Help
@@ -127,26 +127,50 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
         )
 
     async def handle_clear(self, context: MessageContext, args: str = ""):
-        """Handle clear command - clears session and disconnects Claude client"""
+        """Handle clear command - clears all sessions and disconnects all Claude clients"""
         try:
-            # Import SessionHandler to get base session ID
-            from core.handlers.session_handler import SessionHandler
+            # Get the correct settings key (channel_id for Slack, not user_id)
+            settings_key = self.controller._get_settings_key(context)
 
-            # Create temporary handler to get base session ID
-            temp_handler = SessionHandler(self.controller)
-            base_session_id = temp_handler.get_base_session_id(context)
+            # Get current session mappings before clearing them
+            settings = self.settings_manager.get_user_settings(settings_key)
+            session_bases_to_clear = set(settings.session_mappings.keys())
+            
+            # Clear ALL session mappings for this user/channel
+            self.settings_manager.clear_all_session_mappings(settings_key)
+            
+            # Clear all Claude sessions from memory that belong to this channel/user
+            sessions_to_clear = []
+            for session_key in self.controller.claude_sessions.keys():
+                # Session keys format: "base_session_id:working_path"
+                base_part = session_key.split(':')[0] if ':' in session_key else session_key
+                
+                # Check if this session should be cleared
+                if base_part in session_bases_to_clear:
+                    sessions_to_clear.append(session_key)
+            
+            # Clear identified sessions
+            for session_key in sessions_to_clear:
+                try:
+                    client = self.controller.claude_sessions[session_key]
+                    if hasattr(client, 'close'):
+                        await client.close()
+                    del self.controller.claude_sessions[session_key]
+                    logger.info(f"Cleared Claude session: {session_key}")
+                except Exception as e:
+                    logger.warning(f"Error clearing session {session_key}: {e}")
 
-            # Clear all path mappings for this base session
-            self.settings_manager.clear_session_mapping(
-                context.user_id, base_session_id
-            )
+            # Clear session and disconnect clients (legacy)
+            legacy_response = await self.session_manager.clear_session(settings_key)
+            logger.info(f"User {context.user_id} cleared all sessions for {settings_key}")
 
-            # Clear session and disconnect clients
-            response = await self.session_manager.clear_session(context.user_id)
-            logger.info(f"User {context.user_id} cleared session")
-
-            # Add reset message
-            full_response = f"{response}\n🔄 Claude session has been reset."
+            # Build response message based on what was actually cleared
+            if len(sessions_to_clear) > 0:
+                full_response = f"✅ Cleared {len(sessions_to_clear)} active Claude session(s).\n🔄 All sessions have been reset."
+            elif session_bases_to_clear:
+                full_response = f"✅ Cleared {len(session_bases_to_clear)} stored session mapping(s).\n🔄 All sessions have been reset."
+            else:
+                full_response = "📋 No active sessions to clear.\n🔄 Session state has been reset."
 
             # Send the complete response
             channel_context = self._get_channel_context(context)
