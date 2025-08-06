@@ -194,8 +194,8 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                     )
                 else:
                     # For non-Slack platforms
-                    # Need to escape special chars for MarkdownV2
-                    confirmation_text = f"⏳ Processing\\.\\.\\."
+                    formatter = self.im_client.formatter
+                    confirmation_text = f"⏳ {formatter.format_text('Processing...')}"
                     await self.im_client.send_message(
                         target_context,
                         confirmation_text,
@@ -246,8 +246,9 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             
         except Exception as e:
             logger.error(f"Error handling message: {e}")
-            # Escape for MarkdownV2 if needed
-            error_msg = "Error processing message\\." if self.config.platform == "telegram" else "Error processing message."
+            # Format error message using formatter
+            formatter = self.im_client.formatter
+            error_msg = formatter.format_error("Error processing message")
             await self.im_client.send_message(context, error_msg)
     
     async def _session_message_receiver(self, session_id: str, client: ClaudeSDKClient, context: MessageContext, thread_id: Optional[str]):
@@ -312,8 +313,9 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                     if session:
                         session.session_active[session_id] = False
                     
-                    # Escape special chars for MarkdownV2 if needed
-                    ready_msg = "✅ Ready for next message\\!" if self.config.platform == "telegram" else "✅ Ready for next message!"
+                    # Format ready message using formatter
+                    formatter = self.im_client.formatter
+                    ready_msg = formatter.format_success("Ready for next message!")
                     await self.im_client.send_message(
                         target_context,
                         ready_msg,
@@ -327,14 +329,10 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             logger.error(f"Error in message receiver for session {session_id}: {e}")
             # Notify user of error
             try:
-                if self.config.platform == "telegram":
-                    # Escape for MarkdownV2
-                    from telegram.helpers import escape_markdown
-                    escaped_error = escape_markdown(str(e), version=2)
-                    # Escape the static text parts properly for MarkdownV2
-                    error_msg = f"❌ Session error: {escaped_error}\nPlease use /clear to reset\\."
-                else:
-                    error_msg = f"❌ Session error: {str(e)}\nPlease use /clear to reset."
+                formatter = self.im_client.formatter
+                error_text = formatter.format_text(f"Session error: {str(e)}")
+                instruction = formatter.format_text("Please use /clear to reset.")
+                error_msg = f"❌ {error_text}\n{instruction}"
                     
                 await self.im_client.send_message(
                     target_context,
@@ -368,14 +366,10 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                 
                 # Notify user
                 target_context = self._get_target_context(context)
-                if self.config.platform == "telegram":
-                    # Escape for MarkdownV2
-                    from telegram.helpers import escape_markdown
-                    escaped_error = escape_markdown(str(e), version=2)
-                    # Escape the static text parts properly for MarkdownV2
-                    error_msg = f"❌ Error: {escaped_error}\nPlease try again or use /clear to reset\\."
-                else:
-                    error_msg = f"❌ Error: {str(e)}\nPlease try again or use /clear to reset."
+                formatter = self.im_client.formatter
+                error_text = formatter.format_text(f"Error: {str(e)}")
+                instruction = formatter.format_text("Please try again or use /clear to reset.")
+                error_msg = f"❌ {error_text}\n{instruction}"
                     
                 await self.im_client.send_message(
                     target_context,
@@ -386,13 +380,8 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
         except Exception as e:
             logger.error(f"Error in process_message_immediately: {e}")
             target_context = self._get_target_context(context)
-            if self.config.platform == "telegram":
-                # Escape for MarkdownV2
-                from telegram.helpers import escape_markdown
-                escaped_error = escape_markdown(str(e), version=2)
-                error_msg = f"❌ Unexpected error: {escaped_error}"
-            else:
-                error_msg = f"❌ Unexpected error: {str(e)}"
+            formatter = self.im_client.formatter
+            error_msg = formatter.format_error(f"Unexpected error: {str(e)}")
                 
             await self.im_client.send_message(
                 target_context,
@@ -863,38 +852,20 @@ _Tip: All commands work in DMs, channels, and threads!_"""
                 logger.info(f"Handling info_msg_types callback for user {context.user_id}")
                 
                 try:
-                    # Initialize info_text early to avoid unbound variable error
-                    info_text = ""
-                    
                     formatter = self.im_client.formatter
                     
-                    # Build info text using formatter to handle escaping properly
-                    if self.config.platform == "telegram":
-                        # For Telegram, need to escape special characters in MarkdownV2
-                        lines = [
-                            f"📋 {formatter.format_bold('Message Types Info:')}",
-                            "",
-                            f"• {formatter.format_bold('System')} \\- System initialization and status messages",
-                            f"• {formatter.format_bold('Response')} \\- Tool execution responses and results",
-                            f"• {formatter.format_bold('Assistant')} \\- Claude's messages and explanations",
-                            f"• {formatter.format_bold('Result')} \\- Final execution results and summaries",
-                            "",
-                            "Hidden messages won't be sent to your IM platform\\."
-                        ]
-                    else:
-                        # For Slack, no escaping needed for dashes
-                        lines = [
-                            f"📋 {formatter.format_bold('Message Types Info:')}",
-                            "",
-                            f"• {formatter.format_bold('System')} - System initialization and status messages",
-                            f"• {formatter.format_bold('Response')} - Tool execution responses and results",
-                            f"• {formatter.format_bold('Assistant')} - Claude's messages and explanations",
-                            f"• {formatter.format_bold('Result')} - Final execution results and summaries",
-                            "",
-                            "Hidden messages won't be sent to your IM platform."
-                        ]
-                    
-                    info_text = "\n".join(lines)
+                    # Use the new format_info_message method for clean, platform-agnostic formatting
+                    info_text = formatter.format_info_message(
+                        title="Message Types Info:",
+                        emoji="📋",
+                        items=[
+                            ("System", "System initialization and status messages"),
+                            ("Response", "Tool execution responses and results"),
+                            ("Assistant", "Claude's messages and explanations"),
+                            ("Result", "Final execution results and summaries")
+                        ],
+                        footer="Hidden messages won't be sent to your IM platform."
+                    )
                     
                     # Send as new message
                     parse_mode = 'MarkdownV2' if self.config.platform == "telegram" else 'markdown'

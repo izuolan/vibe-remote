@@ -38,6 +38,25 @@ class BaseMarkdownFormatter(ABC):
         """Format horizontal rule"""
         return "---"
     
+    # Core text formatting method
+    def format_text(self, text: str, safe: bool = False) -> str:
+        """Format plain text with automatic escaping
+        
+        Args:
+            text: The text to format
+            safe: If True, text is already escaped/formatted and won't be escaped again
+            
+        Returns:
+            Formatted text with special characters escaped
+        """
+        if safe:
+            return text
+        return self.escape_special_chars(text)
+    
+    def format_plain(self, text: str) -> str:
+        """Alias for format_text - formats plain text with escaping"""
+        return self.format_text(text)
+    
     # Platform-specific abstract methods
     @abstractmethod
     def format_bold(self, text: str) -> str:
@@ -63,6 +82,92 @@ class BaseMarkdownFormatter(ABC):
     def escape_special_chars(self, text: str) -> str:
         """Escape platform-specific special characters"""
         pass
+    
+    # High-level message composition methods
+    def format_message(self, *lines) -> str:
+        """Compose a message from multiple lines
+        
+        Args:
+            *lines: Variable number of lines to compose
+            
+        Returns:
+            Formatted message with proper line breaks
+        """
+        return "\n".join(str(line) for line in lines if line)
+    
+    def format_bullet_list(self, items: List[str], escape: bool = True) -> List[str]:
+        """Format a list of items as bullet points
+        
+        Args:
+            items: List of items to format
+            escape: Whether to escape special characters in items
+            
+        Returns:
+            List of formatted bullet points
+        """
+        formatted = []
+        for item in items:
+            if escape:
+                item = self.format_text(item)
+            formatted.append(f"• {item}")
+        return formatted
+    
+    def format_definition_list(self, items: List[Tuple[str, str]], bold_key: bool = True) -> List[str]:
+        """Format a list of key-value pairs
+        
+        Args:
+            items: List of (key, value) tuples
+            bold_key: Whether to make keys bold
+            
+        Returns:
+            List of formatted definition items
+        """
+        formatted = []
+        for key, value in items:
+            if bold_key:
+                key_part = self.format_bold(key)
+            else:
+                key_part = self.format_text(key)
+            value_part = self.format_text(value)
+            formatted.append(f"• {key_part} - {value_part}")
+        return formatted
+    
+    def format_info_message(self, title: str, emoji: str = "", items: List[Tuple[str, str]] = None, footer: str = "") -> str:
+        """Format a complete info message with title, items, and optional footer
+        
+        Args:
+            title: Message title
+            emoji: Optional emoji for title
+            items: Optional list of (label, description) tuples
+            footer: Optional footer text
+            
+        Returns:
+            Formatted info message
+        """
+        lines = []
+        
+        # Add header
+        if emoji:
+            lines.append(f"{emoji} {self.format_bold(title)}")
+        else:
+            lines.append(self.format_bold(title))
+        
+        # Add blank line after header
+        if items or footer:
+            lines.append("")
+        
+        # Add items
+        if items:
+            for label, description in items:
+                lines.append(f"• {self.format_bold(label)} - {self.format_text(description)}")
+        
+        # Add footer
+        if footer:
+            if items:
+                lines.append("")
+            lines.append(self.format_text(footer))
+        
+        return self.format_message(*lines)
     
     # Convenience methods that combine formatting
     def format_tool_name(self, tool_name: str, emoji: str = "🔧") -> str:

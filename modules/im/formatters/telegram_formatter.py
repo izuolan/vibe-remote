@@ -11,19 +11,18 @@ class TelegramFormatter(BaseMarkdownFormatter):
     
     def format_bold(self, text: str) -> str:
         """Format bold text using double asterisks"""
-        # Text needs to be escaped first
-        escaped_text = self.escape_special_chars(text)
-        return f"*{escaped_text}*"
+        # Don't double-escape - text should be plain text
+        return f"*{text}*"
     
     def format_italic(self, text: str) -> str:
         """Format italic text using underscores"""
-        escaped_text = self.escape_special_chars(text)
-        return f"_{escaped_text}_"
+        # Don't double-escape - text should be plain text
+        return f"_{text}_"
     
     def format_strikethrough(self, text: str) -> str:
         """Format strikethrough text using tildes"""
-        escaped_text = self.escape_special_chars(text)
-        return f"~{escaped_text}~"
+        # Don't double-escape - text should be plain text
+        return f"~{text}~"
     
     def format_link(self, text: str, url: str) -> str:
         """Format hyperlink in Telegram style"""
