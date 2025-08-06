@@ -24,6 +24,18 @@ class SessionHandler:
         self.receiver_tasks = controller.receiver_tasks
         self.stored_session_mappings = controller.stored_session_mappings
     
+    def _get_settings_key(self, context: MessageContext) -> str:
+        """Get settings key based on context"""
+        if self.config.platform == "slack":
+            # For Slack, always use channel_id as the key
+            return context.channel_id
+        elif self.config.platform == "telegram":
+            # For Telegram groups, use channel_id; for DMs use user_id
+            if context.channel_id != context.user_id:
+                return context.channel_id
+            return context.user_id
+        return context.user_id
+    
     def get_base_session_id(self, context: MessageContext) -> str:
         """Get base session ID based on platform and context (without path)"""
         if self.config.platform == "telegram":
@@ -39,8 +51,9 @@ class SessionHandler:
             # Default to user ID
             return f"{self.config.platform}_{context.user_id}"
     
-    def get_working_path(self) -> str:
-        """Get normalized working directory path"""
+    def get_working_path(self, context: Optional[MessageContext] = None) -> str:
+        """Get normalized working directory path - always use the global config"""
+        # Simple and clear: always use the single source of truth
         working_dir = self.config.claude.cwd
         if working_dir:
             return os.path.abspath(os.path.expanduser(working_dir))
@@ -49,7 +62,7 @@ class SessionHandler:
     def get_session_info(self, context: MessageContext) -> Tuple[str, str, str]:
         """Get session info: base_session_id, working_path, and composite_key"""
         base_session_id = self.get_base_session_id(context)
-        working_path = self.get_working_path()
+        working_path = self.get_working_path()  # No need to pass context anymore
         # Create composite key for internal storage
         composite_key = f"{base_session_id}:{working_path}"
         return base_session_id, working_path, composite_key
@@ -63,8 +76,10 @@ class SessionHandler:
             return self.claude_sessions[composite_key]
         
         # Check if we have a stored session mapping
+        # Get correct settings key based on platform
+        settings_key = self._get_settings_key(context)
         stored_claude_session_id = self.settings_manager.get_claude_session_id(
-            context.user_id, base_session_id, working_path
+            settings_key, base_session_id, working_path
         )
         
         # Ensure working directory exists
@@ -174,10 +189,10 @@ class SessionHandler:
                 self.formatter.format_error(f"An error occurred: {error_msg}")
             )
     
-    def capture_session_id(self, base_session_id: str, working_path: str, claude_session_id: str, user_id: str):
+    def capture_session_id(self, base_session_id: str, working_path: str, claude_session_id: str, settings_key: str):
         """Capture and store Claude session ID mapping"""
-        # Persist to settings with nested structure
-        self.settings_manager.set_session_mapping(user_id, base_session_id, working_path, claude_session_id)
+        # Persist to settings with nested structure (settings_key is channel_id for Slack, user/channel_id for Telegram)
+        self.settings_manager.set_session_mapping(settings_key, base_session_id, working_path, claude_session_id)
         
         logger.info(f"Captured Claude session_id: {claude_session_id} for {base_session_id} at {working_path}")
     

@@ -151,7 +151,7 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
     async def handle_cwd(self, context: MessageContext, args: str = ""):
         """Handle cwd command - show current working directory"""
         try:
-            # Always use config.claude.cwd as the single source of truth
+            # Simple: use the single global CWD
             current_cwd = self.config.claude.cwd
             absolute_path = os.path.abspath(current_cwd)
 

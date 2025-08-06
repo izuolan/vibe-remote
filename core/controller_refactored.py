@@ -104,36 +104,52 @@ class Controller:
     
     # Utility methods used by handlers
     def _restore_saved_cwd(self):
-        """Restore the last saved working directory from user settings"""
+        """Restore saved working directory to the global config on startup"""
         try:
-            # Get all user settings
+            # Find the most appropriate saved CWD and apply it globally
             all_settings = self.settings_manager.settings
-            
-            # Find the most recently used custom_cwd
             saved_cwd = None
-            for user_id, user_settings in all_settings.items():
-                if hasattr(user_settings, 'custom_cwd') and user_settings.custom_cwd:
-                    saved_cwd = user_settings.custom_cwd
-                    logger.info(f"Found saved working directory from user {user_id}: {saved_cwd}")
-                    # Use the first non-null custom_cwd found
-                    # In the future, could use timestamps to find the most recent
-                    break
             
-            # Apply the saved working directory if found
+            # For Slack: prefer channel settings over user settings
+            # For Telegram: use any saved custom_cwd
+            for settings_key, user_settings in all_settings.items():
+                if hasattr(user_settings, 'custom_cwd') and user_settings.custom_cwd:
+                    if self.config.platform == "slack":
+                        # Prefer channel settings (start with 'C') over user settings
+                        if settings_key.startswith('C'):
+                            saved_cwd = user_settings.custom_cwd
+                            logger.info(f"Found saved CWD from Slack channel {settings_key}: {saved_cwd}")
+                            break
+                        elif not saved_cwd:  # Use user setting as fallback
+                            saved_cwd = user_settings.custom_cwd
+                    else:  # Telegram or other platforms
+                        saved_cwd = user_settings.custom_cwd
+                        logger.info(f"Found saved CWD from {settings_key}: {saved_cwd}")
+                        break
+            
+            # Apply the saved CWD globally if found and exists
             if saved_cwd and os.path.exists(saved_cwd):
                 self.config.claude.cwd = saved_cwd
-                logger.info(f"Restored working directory to: {saved_cwd}")
+                logger.info(f"✅ Restored global working directory to: {saved_cwd}")
             else:
-                logger.info(f"Using default working directory from config: {self.config.claude.cwd}")
+                if saved_cwd:
+                    logger.warning(f"Saved CWD does not exist: {saved_cwd}, using default")
+                logger.info(f"Using default working directory from .env: {self.config.claude.cwd}")
                 
         except Exception as e:
             logger.error(f"Error restoring saved working directory: {e}")
-            # Continue with default from config
+            # Continue with default from .env
     
     def _get_settings_key(self, context: MessageContext) -> str:
         """Get settings key based on context"""
-        if self.config.platform == "telegram" and context.channel_id != context.user_id:
+        if self.config.platform == "slack":
+            # For Slack, always use channel_id as the key
             return context.channel_id
+        elif self.config.platform == "telegram":
+            # For Telegram groups, use channel_id; for DMs use user_id
+            if context.channel_id != context.user_id:
+                return context.channel_id
+            return context.user_id
         return context.user_id
     
     def _get_target_context(self, context: MessageContext) -> MessageContext:
@@ -152,23 +168,25 @@ class Controller:
     async def handle_settings_update(self, user_id: str, hidden_message_types: list, channel_id: str = None):
         """Handle settings update (typically from Slack modal)"""
         try:
-            # Determine settings key
-            settings_key = channel_id if channel_id else user_id
+            # Determine settings key - for Slack, always use channel_id
+            if self.config.platform == "slack":
+                settings_key = channel_id if channel_id else user_id  # fallback to user_id if no channel
+            else:
+                settings_key = channel_id if channel_id else user_id
             
             # Update settings
             user_settings = self.settings_manager.get_user_settings(settings_key)
             user_settings.hidden_message_types = hidden_message_types
             
             # Save settings - using the correct method name
-            self.settings_manager.save_settings()
+            self.settings_manager.update_user_settings(settings_key, user_settings)
             
             logger.info(f"Updated settings for {settings_key}: hidden types = {hidden_message_types}")
             
-            # Create context for sending confirmation
+            # Create context for sending confirmation (without 'message' field)
             context = MessageContext(
                 user_id=user_id,
                 channel_id=channel_id if channel_id else user_id,
-                message="",
                 platform_specific={}
             )
             
@@ -180,11 +198,10 @@ class Controller:
             
         except Exception as e:
             logger.error(f"Error updating settings: {e}")
-            # Create context for error message
+            # Create context for error message (without 'message' field)
             context = MessageContext(
                 user_id=user_id,
                 channel_id=channel_id if channel_id else user_id,
-                message="",
                 platform_specific={}
             )
             await self.im_client.send_message(
@@ -194,65 +211,24 @@ class Controller:
     
     # Working directory change handler (for Slack modal)
     async def handle_change_cwd_submission(self, user_id: str, new_cwd: str, channel_id: str = None):
-        """Handle working directory change submission (from Slack modal)"""
+        """Handle working directory change submission (from Slack modal) - reuse command handler logic"""
         try:
-            import os
-            
-            # Validate and expand the path
-            validated_path = os.path.abspath(os.path.expanduser(new_cwd))
-            
-            # Create context for messages
+            # Create context for messages (without 'message' field which doesn't exist in MessageContext)
             context = MessageContext(
                 user_id=user_id,
                 channel_id=channel_id if channel_id else user_id,
-                message="",
                 platform_specific={}
             )
             
-            if not os.path.exists(validated_path):
-                await self.im_client.send_message(
-                    context,
-                    f"❌ Path does not exist: {new_cwd}"
-                )
-                return
-            
-            if not os.path.isdir(validated_path):
-                await self.im_client.send_message(
-                    context,
-                    f"❌ Path is not a directory: {new_cwd}"
-                )
-                return
-            
-            # Update the global config directly
-            self.config.claude.cwd = validated_path
-            
-            # Save to user settings for persistence
-            # Determine settings key
-            settings_key = channel_id if channel_id else user_id
-            user_settings = self.settings_manager.get_user_settings(settings_key)
-            user_settings.custom_cwd = validated_path
-            self.settings_manager.update_user_settings(settings_key, user_settings)
-            
-            # Clear all sessions to apply new cwd
-            # Note: This affects ALL users since we're changing the global config
-            for session_id in list(self.claude_sessions.keys()):
-                await self.session_handler.cleanup_session(session_id)
-            
-            # Send confirmation
-            await self.im_client.send_message(
-                context,
-                f"✅ Working directory changed to:\n`{validated_path}`\n\nAll sessions have been reset to use the new directory."
-            )
-            
-            logger.info(f"Changed working directory for {settings_key} to {validated_path}")
+            # Reuse the same logic from handle_set_cwd command handler
+            await self.command_handler.handle_set_cwd(context, new_cwd.strip())
             
         except Exception as e:
             logger.error(f"Error changing working directory: {e}")
-            # Create context for error message
+            # Create context for error message (without 'message' field)
             context = MessageContext(
                 user_id=user_id,
                 channel_id=channel_id if channel_id else user_id,
-                message="",
                 platform_specific={}
             )
             await self.im_client.send_message(

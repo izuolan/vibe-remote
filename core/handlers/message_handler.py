@@ -28,8 +28,14 @@ class MessageHandler:
     
     def _get_settings_key(self, context: MessageContext) -> str:
         """Get settings key based on context"""
-        if self.config.platform == "telegram" and context.channel_id != context.user_id:
+        if self.config.platform == "slack":
+            # For Slack, always use channel_id as the key
             return context.channel_id
+        elif self.config.platform == "telegram":
+            # For Telegram groups, use channel_id; for DMs use user_id
+            if context.channel_id != context.user_id:
+                return context.channel_id
+            return context.user_id
         return context.user_id
     
     def _get_target_context(self, context: MessageContext) -> MessageContext:
@@ -117,11 +123,13 @@ class MessageHandler:
                         if hasattr(message, 'subtype') and message.subtype == 'init':
                             if hasattr(message, 'data') and 'session_id' in message.data:
                                 claude_session_id = message.data['session_id']
+                                # Get correct settings key based on platform
+                                settings_key = self._get_settings_key(context)
                                 self.session_handler.capture_session_id(
                                     base_session_id,
                                     working_path, 
                                     claude_session_id,
-                                    context.user_id
+                                    settings_key
                                 )
                     
                     # Skip certain messages

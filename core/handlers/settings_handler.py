@@ -19,10 +19,14 @@ class SettingsHandler:
     
     def _get_settings_key(self, context: MessageContext) -> str:
         """Get settings key based on context"""
-        # For Telegram groups, use channel ID
-        # For everything else (DMs, Slack), use user ID
-        if self.config.platform == "telegram" and context.channel_id != context.user_id:
+        if self.config.platform == "slack":
+            # For Slack, always use channel_id as the key
             return context.channel_id
+        elif self.config.platform == "telegram":
+            # For Telegram groups, use channel_id; for DMs use user_id
+            if context.channel_id != context.user_id:
+                return context.channel_id
+            return context.user_id
         return context.user_id
     
     async def handle_settings(self, context: MessageContext, args: str = ""):
@@ -207,3 +211,30 @@ class SettingsHandler:
         except Exception as e:
             logger.error(f"Error in info_msg_types handler: {e}", exc_info=True)
             await self.im_client.send_message(context, "❌ Error showing message types info")
+    
+    async def handle_info_how_it_works(self, context: MessageContext):
+        """Show information about how the bot works"""
+        try:
+            formatter = self.im_client.formatter
+            
+            # Use format_info_message for clean, platform-agnostic formatting
+            info_text = formatter.format_info_message(
+                title="How Claude Code Bot Works:",
+                emoji="📚",
+                items=[
+                    ("Real-time", "Messages are immediately sent to Claude Code"),
+                    ("Persistent", "Each chat maintains its own conversation context"),
+                    ("Commands", "Use /start for menu, /clear to reset session"),
+                    ("Work Dir", "Change working directory with /set_cwd or via menu"),
+                    ("Settings", "Customize message visibility in Settings")
+                ],
+                footer="Just type normally to chat with Claude Code!"
+            )
+            
+            # Send as new message
+            await self.im_client.send_message(context, info_text)
+            logger.info(f"Sent how_it_works info to user {context.user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error in handle_info_how_it_works: {e}", exc_info=True)
+            await self.im_client.send_message(context, "❌ Error showing help information")
