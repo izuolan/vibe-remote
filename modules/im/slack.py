@@ -81,15 +81,17 @@ class SlackBot(BaseIMClient):
         # Step 3: Convert links [text](url) to <url|text>
         text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<\2|\1>', text)
         
-        # Step 4: Handle italic (single *) - protect them first
-        # Match single * that are not preceded or followed by another *
-        text = re.sub(r'(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)', r'ITALIC_START\1ITALIC_END', text)
-        
-        # Step 5: Convert bold (**text** to *text*)
+        # Step 4: Convert bold first (**text** to *text*)
+        # This must be done before handling italic to avoid conflicts
         text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
         
-        # Step 6: Convert the italic placeholders to underscores
-        text = text.replace('ITALIC_START', '_').replace('ITALIC_END', '_')
+        # Step 5: Handle italic (convert remaining _text_ format)
+        # In standard markdown, italic can be *text* or _text_
+        # Since we've already converted bold (**) to (*), we should not touch single *
+        # Instead, only handle underscore format for italic
+        # No conversion needed as Slack already uses _ for italic
+        
+        # Step 6: No additional conversion needed for italic
         
         # Step 7: Convert headers (# Header to *Header*)
         # Slack doesn't have headers, so we make them bold
