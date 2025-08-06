@@ -11,18 +11,21 @@ class TelegramFormatter(BaseMarkdownFormatter):
     
     def format_bold(self, text: str) -> str:
         """Format bold text using double asterisks"""
-        # Don't double-escape - text should be plain text
-        return f"*{text}*"
+        # In MarkdownV2, text inside bold still needs escaping
+        escaped_text = self.escape_special_chars(text)
+        return f"*{escaped_text}*"
     
     def format_italic(self, text: str) -> str:
         """Format italic text using underscores"""
-        # Don't double-escape - text should be plain text
-        return f"_{text}_"
+        # In MarkdownV2, text inside italic still needs escaping
+        escaped_text = self.escape_special_chars(text)
+        return f"_{escaped_text}_"
     
     def format_strikethrough(self, text: str) -> str:
         """Format strikethrough text using tildes"""
-        # Don't double-escape - text should be plain text
-        return f"~{text}~"
+        # In MarkdownV2, text inside strikethrough still needs escaping
+        escaped_text = self.escape_special_chars(text)
+        return f"~{escaped_text}~"
     
     def format_link(self, text: str, url: str) -> str:
         """Format hyperlink in Telegram style"""
@@ -74,6 +77,16 @@ class TelegramFormatter(BaseMarkdownFormatter):
         if emoji:
             return f"{emoji} {self.format_bold(title)}"
         return self.format_bold(title)
+    
+    def format_definition_item(self, label: str, description: str) -> str:
+        """Format a definition item with proper escaping for MarkdownV2
+        
+        The dash separator needs to be escaped in Telegram MarkdownV2
+        """
+        bold_label = self.format_bold(label)
+        escaped_separator = " \\- "  # Escape the dash for MarkdownV2
+        escaped_description = self.escape_special_chars(description)
+        return f"• {bold_label}{escaped_separator}{escaped_description}"
     
     def format_key_value(self, key: str, value: str, inline: bool = True) -> str:
         """Format key-value pair"""

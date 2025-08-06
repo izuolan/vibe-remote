@@ -112,6 +112,19 @@ class BaseMarkdownFormatter(ABC):
             formatted.append(f"• {item}")
         return formatted
     
+    def format_definition_item(self, label: str, description: str) -> str:
+        """Format a single definition item with label and description
+        
+        Args:
+            label: The label/key text
+            description: The description text
+            
+        Returns:
+            Formatted definition item
+        """
+        # Default implementation - subclasses can override for platform-specific needs
+        return f"• {self.format_bold(label)} - {self.format_text(description)}"
+    
     def format_definition_list(self, items: List[Tuple[str, str]], bold_key: bool = True) -> List[str]:
         """Format a list of key-value pairs
         
@@ -159,7 +172,8 @@ class BaseMarkdownFormatter(ABC):
         # Add items
         if items:
             for label, description in items:
-                lines.append(f"• {self.format_bold(label)} - {self.format_text(description)}")
+                # Use a platform-specific separator method
+                lines.append(self.format_definition_item(label, description))
         
         # Add footer
         if footer:
