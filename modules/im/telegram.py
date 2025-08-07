@@ -254,7 +254,7 @@ class TelegramBot(BaseIMClient):
         self,
         context: MessageContext,
         text: str,
-        parse_mode: Optional[str] = None,
+        parse_mode: Optional[str] = None,  # Kept for interface compatibility, but ignored
         reply_to: Optional[str] = None,
     ) -> str:
         """Send a text message - BaseIMClient implementation"""
@@ -267,8 +267,8 @@ class TelegramBot(BaseIMClient):
         markdownv2_text = self._convert_to_markdownv2(text)
         kwargs = {"chat_id": chat_id, "text": markdownv2_text}
 
-        # Use MarkdownV2 parse mode
-        kwargs["parse_mode"] = parse_mode or "MarkdownV2"
+        # Always use MarkdownV2 since we converted with markdownify
+        kwargs["parse_mode"] = "MarkdownV2"
 
         if reply_to or context.thread_id:
             kwargs["reply_to_message_id"] = int(reply_to or context.thread_id)
