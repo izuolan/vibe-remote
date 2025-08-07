@@ -74,6 +74,7 @@ class CommandHandlers:
                 formatter.format_text("/cwd - Show current working directory"),
                 formatter.format_text("/set_cwd <path> - Set working directory"),
                 formatter.format_text("/settings - Personalization settings"),
+                formatter.format_text("/stop - Interrupt Claude execution"),
                 "",
                 formatter.format_bold("How it works:"),
                 formatter.format_text(
@@ -316,4 +317,77 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             await self.im_client.send_message(
                 channel_context,
                 "📂 Click the 'Change Work Dir' button in the /start menu to change working directory.",
+            )
+
+    async def handle_stop(self, context: MessageContext, args: str = ""):
+        """Handle /stop command - send interrupt message to Claude"""
+        try:
+            # Get the session handler directly from controller
+            session_handler = self.controller.session_handler
+            if not session_handler:
+                channel_context = self._get_channel_context(context)
+                await self.im_client.send_message(
+                    channel_context,
+                    "❌ Session handler not available"
+                )
+                return
+
+            # Get session info for the current context
+            base_session_id, working_path, composite_key = session_handler.get_session_info(context)
+            
+            # Check if there's an active Claude session
+            if composite_key not in self.controller.claude_sessions:
+                channel_context = self._get_channel_context(context)
+                
+                # Provide helpful guidance based on platform
+                if self.config.platform == "slack":
+                    formatter = self.im_client.formatter
+                    help_text = (
+                        f"ℹ️ {formatter.format_bold('No active Claude session to stop')}\n\n"
+                        f"The stop command interrupts Claude during execution.\n\n"
+                        f"{formatter.format_bold('How to use in Slack:')}\n"
+                        f"• In channel: `/stop`\n"
+                        f"• In thread: Type `stop` or `@bot /stop`\n"
+                        f"  _(Slack doesn't support slash commands in threads)_\n\n"
+                        f"{formatter.format_bold('Steps:')}\n"
+                        f"1. Send a message to Claude in a thread\n"
+                        f"2. While Claude is processing, send `stop` in the thread\n"
+                        f"3. Claude will stop but keep the session active\n\n"
+                        f"💡 Tip: Start a conversation with Claude first, then use stop if needed."
+                    )
+                else:
+                    help_text = (
+                        "ℹ️ **No active Claude session to stop**\n\n"
+                        "The `/stop` command interrupts Claude during execution.\n\n"
+                        "**How to use:**\n"
+                        "1. Send a message to Claude\n"
+                        "2. While Claude is processing, send `/stop`\n"
+                        "3. Claude will stop execution but keep the session active\n\n"
+                        "💡 Tip: Start a conversation with Claude first, then use `/stop` if needed."
+                    )
+                
+                await self.im_client.send_message(channel_context, help_text)
+                return
+
+            # Get the Claude client for this session
+            client = self.controller.claude_sessions[composite_key]
+            
+            # Send acknowledgment - use original context to send to thread if applicable
+            await self.im_client.send_message(
+                context,  # Use original context, not channel_context
+                "🛑 Sending stop signal to Claude..."
+            )
+            
+            # Send interrupt message to Claude through the same session
+            stop_message = "Please stop the current execution immediately and wait for further instructions."
+            await client.query(stop_message, session_id=composite_key)
+            
+            logger.info(f"Sent stop command to Claude session {composite_key}")
+            
+        except Exception as e:
+            logger.error(f"Error sending stop command: {e}", exc_info=True)
+            # For errors, still use original context to maintain thread consistency
+            await self.im_client.send_message(
+                context,  # Use original context
+                f"❌ Error sending stop command: {str(e)}"
             )

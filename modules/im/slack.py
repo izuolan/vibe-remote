@@ -409,9 +409,10 @@ class SlackBot(BaseIMClient):
             return
         
         # Map Slack slash commands to internal commands
-        # Only /start command is exposed to users
+        # Only /start and /stop commands are exposed to users
         command_mapping = {
-            'start': 'start'
+            'start': 'start',
+            'stop': 'stop'
         }
         
         # Get the actual command name

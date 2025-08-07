@@ -67,6 +67,15 @@ class MessageHandler:
     async def handle_user_message(self, context: MessageContext, message: str):
         """Process regular user messages and send to Claude"""
         try:
+            # Check if message is a stop command in thread (for Slack)
+            # This handles the case where slash commands don't work in threads
+            if context.thread_id and message.strip().lower() in ['stop', '/stop']:
+                logger.info(f"Detected stop command in thread: '{message}'")
+                # Delegate to the stop command handler
+                if hasattr(self.controller, 'command_handler'):
+                    await self.controller.command_handler.handle_stop(context, "")
+                    return
+            
             # Get or create Claude session
             base_session_id, working_path, composite_key = self.session_handler.get_session_info(context)
             client = await self.session_handler.get_or_create_claude_session(context)
