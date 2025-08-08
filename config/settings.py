@@ -49,9 +49,15 @@ class TelegramConfig(BaseIMConfig):
         """Validate Telegram configuration"""
         if not self.bot_token:
             raise ValueError("TELEGRAM_BOT_TOKEN is required")
-        if not self.bot_token.startswith(("bot", "xox")):
-            # Basic token format check
-            logger.warning("Telegram bot token format might be invalid")
+        # Telegram bot token format is typically "<digits>:<token>"
+        if ":" not in self.bot_token:
+            logger.warning("Telegram bot token format might be invalid: missing colon")
+        else:
+            prefix = self.bot_token.split(":", 1)[0]
+            if not prefix.isdigit():
+                logger.warning(
+                    "Telegram bot token format might be invalid: non-numeric prefix"
+                )
         return True
 
 
