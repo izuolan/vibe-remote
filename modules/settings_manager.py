@@ -43,7 +43,7 @@ class SettingsManager:
     # ---------------------------------------------
     def _normalize_user_id(self, user_id: Union[int, str]) -> str:
         """Normalize user_id consistently to string.
-        
+
         Rationale: JSON object keys are strings; Slack IDs are strings; unifying to
         string avoids mixed-type keys (e.g., 123 vs "123").
         """
@@ -116,7 +116,10 @@ class SettingsManager:
         # Remove legacy int key if exists
         try:
             int_form = int(normalized_id)
-            if int_form in self.settings and self.settings.get(normalized_id) is not self.settings[int_form]:
+            if (
+                int_form in self.settings
+                and self.settings.get(normalized_id) is not self.settings[int_form]
+            ):
                 del self.settings[int_form]
         except Exception:
             pass
