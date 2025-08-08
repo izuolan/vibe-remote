@@ -92,17 +92,6 @@ class SettingsManager:
         """Get settings for a specific user"""
         normalized_id = self._normalize_user_id(user_id)
 
-        # Migrate any legacy int key to string key to keep single source of truth
-        try:
-            int_form = int(normalized_id)
-            if int_form in self.settings:  # legacy in-memory int key
-                if normalized_id not in self.settings:
-                    self.settings[normalized_id] = self.settings[int_form]
-                del self.settings[int_form]
-                self._save_settings()
-        except Exception:
-            pass
-
         # Return existing or create new
         if normalized_id not in self.settings:
             self.settings[normalized_id] = UserSettings()
@@ -112,17 +101,6 @@ class SettingsManager:
     def update_user_settings(self, user_id: Union[int, str], settings: UserSettings):
         """Update settings for a specific user"""
         normalized_id = self._normalize_user_id(user_id)
-
-        # Remove legacy int key if exists
-        try:
-            int_form = int(normalized_id)
-            if (
-                int_form in self.settings
-                and self.settings.get(normalized_id) is not self.settings[int_form]
-            ):
-                del self.settings[int_form]
-        except Exception:
-            pass
 
         self.settings[normalized_id] = settings
         self._save_settings()
