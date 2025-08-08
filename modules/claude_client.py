@@ -32,7 +32,9 @@ class ClaudeClient:
             system_prompt=config.system_prompt,
         )
 
-    def format_message(self, message, get_relative_path: Optional[Callable[[str], str]] = None) -> str:
+    def format_message(
+        self, message, get_relative_path: Optional[Callable[[str], str]] = None
+    ) -> str:
         """Format different types of messages according to specified rules"""
         try:
             if isinstance(message, SystemMessage):
@@ -51,7 +53,9 @@ class ClaudeClient:
             logger.error(f"Error formatting message: {e}")
             return self.formatter.format_error(f"Error formatting message: {str(e)}")
 
-    def _process_content_blocks(self, content_blocks, get_relative_path: Optional[Callable[[str], str]] = None) -> list:
+    def _process_content_blocks(
+        self, content_blocks, get_relative_path: Optional[Callable[[str], str]] = None
+    ) -> list:
         """Process content blocks (TextBlock, ToolUseBlock) and return formatted parts"""
         formatted_parts = []
 
@@ -93,11 +97,17 @@ class ClaudeClient:
             # Fallback to original path if any error
             return full_path
 
-    def _format_tool_use_block(self, block: ToolUseBlock, get_relative_path: Optional[Callable[[str], str]] = None) -> str:
+    def _format_tool_use_block(
+        self,
+        block: ToolUseBlock,
+        get_relative_path: Optional[Callable[[str], str]] = None,
+    ) -> str:
         """Format ToolUseBlock using formatter"""
         # Prefer caller-provided get_relative_path (per-session cwd), fallback to self
         rel = get_relative_path if get_relative_path else self._get_relative_path
-        return self.formatter.format_tool_use(block.name, block.input, get_relative_path=rel)
+        return self.formatter.format_tool_use(
+            block.name, block.input, get_relative_path=rel
+        )
 
     def _format_tool_result_block(self, block: ToolResultBlock) -> str:
         """Format ToolResultBlock using formatter"""
@@ -109,12 +119,20 @@ class ClaudeClient:
         session_id = message.data.get("session_id", None)
         return self.formatter.format_system_message(cwd, message.subtype, session_id)
 
-    def _format_assistant_message(self, message: AssistantMessage, get_relative_path: Optional[Callable[[str], str]] = None) -> str:
+    def _format_assistant_message(
+        self,
+        message: AssistantMessage,
+        get_relative_path: Optional[Callable[[str], str]] = None,
+    ) -> str:
         """Format AssistantMessage using formatter"""
         content_parts = self._process_content_blocks(message.content, get_relative_path)
         return self.formatter.format_assistant_message(content_parts)
 
-    def _format_user_message(self, message: UserMessage, get_relative_path: Optional[Callable[[str], str]] = None) -> str:
+    def _format_user_message(
+        self,
+        message: UserMessage,
+        get_relative_path: Optional[Callable[[str], str]] = None,
+    ) -> str:
         """Format UserMessage using formatter"""
         content_parts = self._process_content_blocks(message.content, get_relative_path)
         return self.formatter.format_user_message(content_parts)
@@ -134,4 +152,3 @@ class ClaudeClient:
             if not message.content:
                 return True
         return False
-
