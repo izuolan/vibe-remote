@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Optional
+from typing import Optional, Callable
 from claude_code_sdk import (
     ClaudeCodeOptions,
     SystemMessage,
@@ -32,15 +32,15 @@ class ClaudeClient:
             system_prompt=config.system_prompt,
         )
 
-    def format_message(self, message) -> str:
+    def format_message(self, message, get_relative_path: Optional[Callable[[str], str]] = None) -> str:
         """Format different types of messages according to specified rules"""
         try:
             if isinstance(message, SystemMessage):
                 return self._format_system_message(message)
             elif isinstance(message, AssistantMessage):
-                return self._format_assistant_message(message)
+                return self._format_assistant_message(message, get_relative_path)
             elif isinstance(message, UserMessage):
-                return self._format_user_message(message)
+                return self._format_user_message(message, get_relative_path)
             elif isinstance(message, ResultMessage):
                 return self._format_result_message(message)
             else:
@@ -51,7 +51,7 @@ class ClaudeClient:
             logger.error(f"Error formatting message: {e}")
             return self.formatter.format_error(f"Error formatting message: {str(e)}")
 
-    def _process_content_blocks(self, content_blocks) -> list:
+    def _process_content_blocks(self, content_blocks, get_relative_path: Optional[Callable[[str], str]] = None) -> list:
         """Process content blocks (TextBlock, ToolUseBlock) and return formatted parts"""
         formatted_parts = []
 
@@ -61,7 +61,7 @@ class ClaudeClient:
                 # This avoids double escaping
                 formatted_parts.append(block.text)
             elif isinstance(block, ToolUseBlock):
-                tool_info = self._format_tool_use_block(block)
+                tool_info = self._format_tool_use_block(block, get_relative_path)
                 formatted_parts.append(tool_info)
             elif isinstance(block, ToolResultBlock):
                 result_info = self._format_tool_result_block(block)
@@ -93,12 +93,11 @@ class ClaudeClient:
             # Fallback to original path if any error
             return full_path
 
-    def _format_tool_use_block(self, block: ToolUseBlock) -> str:
+    def _format_tool_use_block(self, block: ToolUseBlock, get_relative_path: Optional[Callable[[str], str]] = None) -> str:
         """Format ToolUseBlock using formatter"""
-        # Use formatter's format_tool_use method
-        return self.formatter.format_tool_use(
-            block.name, block.input, get_relative_path=self._get_relative_path
-        )
+        # Prefer caller-provided get_relative_path (per-session cwd), fallback to self
+        rel = get_relative_path if get_relative_path else self._get_relative_path
+        return self.formatter.format_tool_use(block.name, block.input, get_relative_path=rel)
 
     def _format_tool_result_block(self, block: ToolResultBlock) -> str:
         """Format ToolResultBlock using formatter"""
@@ -110,14 +109,14 @@ class ClaudeClient:
         session_id = message.data.get("session_id", None)
         return self.formatter.format_system_message(cwd, message.subtype, session_id)
 
-    def _format_assistant_message(self, message: AssistantMessage) -> str:
+    def _format_assistant_message(self, message: AssistantMessage, get_relative_path: Optional[Callable[[str], str]] = None) -> str:
         """Format AssistantMessage using formatter"""
-        content_parts = self._process_content_blocks(message.content)
+        content_parts = self._process_content_blocks(message.content, get_relative_path)
         return self.formatter.format_assistant_message(content_parts)
 
-    def _format_user_message(self, message: UserMessage) -> str:
+    def _format_user_message(self, message: UserMessage, get_relative_path: Optional[Callable[[str], str]] = None) -> str:
         """Format UserMessage using formatter"""
-        content_parts = self._process_content_blocks(message.content)
+        content_parts = self._process_content_blocks(message.content, get_relative_path)
         return self.formatter.format_user_message(content_parts)
 
     def _format_result_message(self, message: ResultMessage) -> str:

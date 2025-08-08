@@ -193,8 +193,13 @@ class MessageHandler:
 
                     # Format and send message using claude_client
                     if hasattr(self.controller, "claude_client"):
+                        # Provide a per-session relative path resolver to ensure correct cwd
+                        def _rel(path: str) -> str:
+                            return self.get_relative_path(path, context)
                         formatted_message = (
-                            self.controller.claude_client.format_message(message)
+                            self.controller.claude_client.format_message(
+                                message, get_relative_path=_rel
+                            )
                         )
                         if formatted_message and formatted_message.strip():
                             # Add separator line for Slack to improve message separation

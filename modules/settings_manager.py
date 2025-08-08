@@ -34,6 +34,21 @@ class SettingsManager:
         self.settings_file = Path(settings_file)
         self.settings: Dict[Union[int, str], UserSettings] = {}
         self._load_settings()
+
+    # ---------------------------------------------
+    # Internal helpers
+    # ---------------------------------------------
+    def _normalize_user_id(self, user_id: Union[int, str]) -> Union[int, str]:
+        """Normalize user_id to avoid duplicate keys (e.g. '123' vs 123)
+        
+        - If user_id is a numeric string, convert to int (Telegram case)
+        - Otherwise keep as string (Slack IDs are non-numeric strings)
+        """
+        if isinstance(user_id, int):
+            return user_id
+        if isinstance(user_id, str) and user_id.isdigit():
+            return int(user_id)
+        return user_id
     
     def _load_settings(self):
         """Load settings from JSON file"""
@@ -79,42 +94,34 @@ class SettingsManager:
     
     def get_user_settings(self, user_id: Union[int, str]) -> UserSettings:
         """Get settings for a specific user"""
-        # Normalize user_id to handle both int and string forms
-        normalized_id = user_id
-        
-        # For Telegram, try to find by both int and string forms
-        if isinstance(user_id, str) and user_id.isdigit():
-            # Try as int first
-            int_id = int(user_id)
-            if int_id in self.settings:
-                return self.settings[int_id]
-            # Also check string form
-            if user_id in self.settings:
-                return self.settings[user_id]
-            # Use int form for Telegram
-            normalized_id = int_id
-        elif isinstance(user_id, int):
-            # Check if exists as int
-            if user_id in self.settings:
-                return self.settings[user_id]
-            # Also check string form
-            str_id = str(user_id)
-            if str_id in self.settings:
-                return self.settings[str_id]
-            normalized_id = user_id
-        else:
-            # For Slack and other platforms, keep as string
-            if user_id in self.settings:
-                return self.settings[user_id]
-        
-        # Create new settings if not found
-        self.settings[normalized_id] = UserSettings()
-        self._save_settings()
+        normalized_id = self._normalize_user_id(user_id)
+
+        # Try to merge stray duplicate key (e.g. both '123' and 123 exist)
+        other_form = str(normalized_id) if isinstance(normalized_id, int) else None
+        if isinstance(normalized_id, int) and other_form in self.settings:
+            # Prefer normalized (int). If int not present, migrate string value
+            if normalized_id not in self.settings:
+                self.settings[normalized_id] = self.settings[other_form]
+            del self.settings[other_form]
+            self._save_settings()
+
+        # Return existing or create new
+        if normalized_id not in self.settings:
+            self.settings[normalized_id] = UserSettings()
+            self._save_settings()
         return self.settings[normalized_id]
     
     def update_user_settings(self, user_id: Union[int, str], settings: UserSettings):
         """Update settings for a specific user"""
-        self.settings[user_id] = settings
+        normalized_id = self._normalize_user_id(user_id)
+
+        # Remove stray duplicate under the other representation to keep single source
+        if isinstance(normalized_id, int):
+            stray_key = str(normalized_id)
+            if stray_key in self.settings and self.settings.get(normalized_id) is not self.settings[stray_key]:
+                del self.settings[stray_key]
+
+        self.settings[normalized_id] = settings
         self._save_settings()
     
     def toggle_hidden_message_type(self, user_id: Union[int, str], message_type: str) -> bool:
