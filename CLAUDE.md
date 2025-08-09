@@ -4,7 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a multi-platform remote control bot for Claude Code, supporting both Telegram and Slack. Users can send messages through IM platforms to execute Claude Code commands remotely. The system provides persistent sessions, real-time feedback, and maintains conversation context.
+Vibe Remote is a multi-platform, chat-native controller for vibe coding. It supports Slack and Telegram, letting users remote-control Claude Code (and future coding CLIs) from chat. The system provides persistent sessions, real-time streaming feedback, and maintains conversation context.
+
+## Project Name & Vision
+
+Vibe Remote — hands-free vibe coding from chat.
+
+Vision:
+
+- Minimize manual review; let the AI drive coding based on intent and constraints
+- Enable work-from-anywhere by controlling coding CLIs via Slack/Telegram
+- Stay extensible beyond Claude Code to other coding agents and toolchains
 
 ## Development Commands
 

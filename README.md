@@ -1,28 +1,59 @@
-# Claude Code Remote Control Bot
+# Vibe Remote
 
-A modular system for controlling Claude Code through multiple instant messaging platforms (Telegram, Slack).
+[<img src="assets/logo.png" alt="Vibe Remote" width="120" align="right" />](assets/logo.png)
+
+[![Python](https://img.shields.io/badge/python-3.9%2B-3776AB)](https://www.python.org/)
+[![Platforms](https://img.shields.io/badge/platforms-Slack%20%7C%20Telegram-8A2BE2)](#setup-guides)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
+
+[English](README.md) | [中文](README_ZH.md)
+
+_Hands‑free remote vibe coding from Slack/Telegram._
+
+Vibe Remote is a chat‑native controller for vibe coding. Trigger and steer coding CLIs (starting with Claude Code) from Slack/Telegram — minimal review, intent‑driven, ship faster. Built to work anywhere you work.
+
+## Why Vibe Remote
+
+- **Vibe coding, not micromanaging**: Let AI drive based on your intent and constraints; focus on outcomes.
+- **Work from anywhere**: Control coding sessions over Slack/Telegram; no IDE tether.
+- **Extensible by design**: Starts with Claude Code, built to support additional coding agents/CLIs.
+- **Session persistence by thread + path**: Each Slack thread/Telegram chat maintains its own Claude session and working dir; auto‑resume via saved mappings.
+- **Interactive Slack UX**: `/start` menu + Settings/CWD modals; buttons over commands for faster flow.
+
+> Recommendation: Prefer Slack as the primary platform. Threaded conversations enable parallel subtasks and keep channel history tidy — each subtask stays in its own thread.
+
+## Core Features
+
+- **Multi‑platform**: First‑class Slack & Telegram support
+- **Hands‑free flow**: Minimal review; messages stream back in real time
+- **Persistent sessions**: Per chat/thread sessions, easy resume
+- **Threaded Slack UX**: Clean, per‑conversation threads
+- **Working dir control**: Inspect and change `cwd` on the fly
+- **Personalization**: Toggle which message types to display
+
+## Architecture (Brief)
+
+- `BaseIMClient` + platform implementations (`slack.py`, `telegram.py`)
+- `IMFactory` to construct clients by `IM_PLATFORM`
+- `Controller` orchestrates sessions, formatting, and command routing
 
 ## Quick Start
 
-1. Install dependencies:
+1. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Create `.env` file from template:
+2. Create and edit `.env`
 
 ```bash
 cp .env.example .env
-# Edit .env with your platform choice and credentials
+# Set IM_PLATFORM and tokens
 ```
 
-3. Choose your platform:
-
-   - Set `IM_PLATFORM=telegram` for Telegram
-   - Set `IM_PLATFORM=slack` for Slack
-
-4. Run the bot:
+3. Run
 
 ```bash
 ./start.sh
@@ -32,125 +63,81 @@ python main.py
 
 ## Configuration
 
-### Platform Selection
+### Platform selection
 
-Set `IM_PLATFORM` in your `.env` file:
-
-- `telegram` - Use Telegram Bot
-- `slack` - Use Slack Bot
-
-### Telegram Configuration
-
-- `TELEGRAM_BOT_TOKEN` (required): Your Telegram bot token from @BotFather
-- `TELEGRAM_TARGET_CHAT_ID` (optional): Whitelist of allowed chat IDs
-  - Empty or `[]`: Only accept private messages (DMs)
-  - `null` or omit: Accept all chats
-  - `[123456789,987654321]`: Only accept messages from these chat IDs
-  - Use `/start` command to get your chat ID
-
-### Slack Configuration
-
-- `SLACK_BOT_TOKEN` (required): Your Slack bot token (starts with `xoxb-`)
-- `SLACK_APP_TOKEN` (required for Socket Mode): App-level token (starts with `xapp-`)
-- `SLACK_TARGET_CHANNEL` (optional): Whitelist of allowed channel IDs
-  - Empty or `[]`: Only accept direct messages (DMs)
-  - `null` or omit: Accept all channels
-  - `[C1234567890,C0987654321]`: Only accept messages from these channel IDs
-
-For detailed Slack setup instructions, see [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md).
-
-### Claude Configuration
-
-- `CLAUDE_DEFAULT_CWD` (required): Working directory for Claude Code (e.g. `./_tmp`)
-- `CLAUDE_PERMISSION_MODE` (required): Permission mode, e.g. `bypassPermissions`
-- `CLAUDE_SYSTEM_PROMPT` (optional): Custom system prompt
-
-Claude Code SDK credentials (set via environment, if required by your setup):
-
-- `ANTHROPIC_API_KEY` (or other keys required by `claude-code-sdk`)
-
-### Application Configuration
-
-- `LOG_LEVEL`: Logging level (default: `INFO`)
-
-## Features
-
-### Core Features
-
-1. **Multi-Platform Support**: Works with Telegram and Slack
-2. **Automatic Execution**: Messages are processed automatically in order
-3. **Message Queue**: User messages are queued and executed sequentially
-4. **Real-time Feedback**: Claude Code outputs are forwarded in real-time
-5. **Session Management**: Supports multiple concurrent users with independent queues
-6. **Status Tracking**: Visual indicators for queue and execution status
-7. **Working Directory Management**: Change Claude Code's working directory on the fly
-8. **Personalization Settings**: Configure which message types to display
-
-### Platform-Specific Features
-
-#### Telegram
-
-- Direct message and group chat support
-- Inline keyboard for settings
-- Message threading via reply-to
-- Markdown formatting support
-
-#### Slack
-
-- **Thread Support**: Each conversation is organized in its own thread
-- **Socket Mode**: No need for public webhooks
-- **Channel & DM Support**: Works in both channels and direct messages
-- **Mention-based Triggering**: In channels, mention the bot to interact
-
-## Commands
-
-All platforms support the same commands:
-
-- `/start` - Shows welcome message and IDs
-- `/status` - Display queue and execution status
-- `/clear` - Clear message queue
-- `/cwd` - Show current working directory
-- `/set_cwd <path>` - Change working directory
-- `/execute` - Manually trigger queue processing
-- `/queue` - Show messages in queue
-- `/settings` - Configure message visibility
-
-## Usage
-
-### Telegram
-
-1. Start a chat with your bot
-2. Send messages directly - they'll be queued and processed automatically
-3. Use commands with `/` prefix
+- `IM_PLATFORM=slack` or `IM_PLATFORM=telegram`
 
 ### Slack
 
-1. **In Channels**: Mention the bot (`@bot-name your message`)
-2. **In DMs**: Send messages directly
-3. Commands work with `/` prefix
-4. Each user's conversation is organized in a thread
+- `SLACK_BOT_TOKEN` (xoxb-...)
+- `SLACK_APP_TOKEN` (xapp-..., Socket Mode)
+- `SLACK_TARGET_CHANNEL` optional whitelist of allowed channel IDs (channels only, start with `C`). Leave empty or omit to accept all channels. DMs are not supported currently.
 
-## Adding New Platforms
+### Telegram
 
-The architecture supports easy addition of new IM platforms:
+- `TELEGRAM_BOT_TOKEN` from @BotFather
+- `TELEGRAM_TARGET_CHAT_ID` optional whitelist: `[123,...]` | `[]` only DMs | `null` all
 
-1. Create a new class inheriting from `BaseIMClient`
-2. Implement all abstract methods
-3. Add configuration class inheriting from `BaseIMConfig`
-4. Update `IMFactory` to support the new platform
-5. Add platform-specific environment variables
+### Claude Code
 
-See `modules/im/slack.py` for a complete implementation example.
+- `CLAUDE_DEFAULT_CWD` e.g. `./_tmp`
+- `CLAUDE_PERMISSION_MODE` e.g. `bypassPermissions`
+- `CLAUDE_SYSTEM_PROMPT` optional
+- `ANTHROPIC_API_KEY` if required by your SDK setup
 
-## License
+### App
 
-This project is licensed under the MIT License. See `LICENSE` for details.
+- `LOG_LEVEL` default `INFO`
+
+## Usage
+
+### Commands (all platforms)
+
+- `/start` open menu / welcome
+- `/clear` reset conversation/session
+- `/cwd` show working directory
+- `/set_cwd <path>` change working directory
+- `/settings` configure message visibility
+- `/stop` interrupt current execution
+
+### Slack
+
+- In channels, run `/start` to open the interactive menu (Current Dir, Change Work Dir, Reset Session, Settings, How it Works)
+- The bot organizes each conversation as a thread; reply in the thread to continue
+- Slack DMs are not supported currently
+- Slash commands are limited in threads; to stop in a thread, type `stop` directly
+
+### Telegram
+
+- DM or group; run `/start` then type naturally
+- Real‑time streaming; long outputs are split and code blocks are formatted
+
+## Setup Guides
+
+- Slack: [English](docs/SLACK_SETUP.md) | [中文](docs/SLACK_SETUP_ZH.md)
+- Telegram: [English](docs/TELEGRAM_SETUP.md) | [中文](docs/TELEGRAM_SETUP_ZH.md)
+
+## Roadmap
+
+- Additional coding CLIs/agents beyond Claude Code
+- More IM platforms (Discord, Teams)
+- File upload/attachments piping to coding sessions
+- Advanced session policies & permissions
 
 ## Contributing
 
-Please see `CONTRIBUTING.md`. By participating you agree to the `CODE_OF_CONDUCT.md`.
+See `CONTRIBUTING.md`. By participating you agree to `CODE_OF_CONDUCT.md`.
+
+## License
+
+MIT. See `LICENSE`.
 
 ## Security
 
-- Do not commit secrets. Use `.env` based on `.env.example`.
-- The underlying `claude-code-sdk` may require credentials such as `ANTHROPIC_API_KEY` in your environment.
+## Security & Ops
+
+- **Secrets**: Never commit tokens. Use `.env`. Rotate regularly.
+- **Whitelists**: Restrict access via `SLACK_TARGET_CHANNEL` (channels only, `C…`) or `TELEGRAM_TARGET_CHAT_ID`. `null` accepts all; empty list limits to DMs/groups accordingly (Slack DMs currently unsupported).
+- **Logs**: Runtime logs at `logs/claude_proxy.log`.
+- **Session persistence**: `user_settings.json` stores per‑thread/chat session mappings and preferences; persist this file in production.
+- **Cleanup**: Set `CLEANUP_ENABLED=true` to safely prune completed receiver tasks during message handling for long‑running processes.

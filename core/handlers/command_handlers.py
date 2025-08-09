@@ -18,7 +18,7 @@ class CommandHandlers:
         self.im_client = controller.im_client
         self.session_manager = controller.session_manager
         self.settings_manager = controller.settings_manager
-    
+
     def _get_channel_context(self, context: MessageContext) -> MessageContext:
         """Get context for channel messages (no thread)"""
         # For Slack: send command responses directly to channel, not in thread
@@ -27,7 +27,7 @@ class CommandHandlers:
                 user_id=context.user_id,
                 channel_id=context.channel_id,
                 thread_id=None,  # No thread for command responses
-                platform_specific=context.platform_specific
+                platform_specific=context.platform_specific,
             )
         # For other platforms, keep original context
         return context
@@ -62,7 +62,7 @@ class CommandHandlers:
 
             # Build welcome message using formatter to handle escaping properly
             lines = [
-                formatter.format_bold("Welcome to Claude Code Remote Control Bot!"),
+                formatter.format_bold("Welcome to Vibe Remote!"),
                 "",
                 f"Platform: {formatter.format_text(platform_name)}",
                 f"User ID: {formatter.format_code_inline(context.user_id)}",
@@ -112,7 +112,7 @@ class CommandHandlers:
 
         keyboard = InlineKeyboard(buttons=buttons)
 
-        welcome_text = f"""🎉 **Welcome to Claude Code Remote Control Bot!**
+        welcome_text = f"""🎉 **Welcome to Vibe Remote!**
 
 👋 Hello **{user_name}**!
 🔧 Platform: **{platform_name}**
@@ -136,25 +136,27 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             # Get current session mappings before clearing them
             settings = self.settings_manager.get_user_settings(settings_key)
             session_bases_to_clear = set(settings.session_mappings.keys())
-            
+
             # Clear ALL session mappings for this user/channel
             self.settings_manager.clear_all_session_mappings(settings_key)
-            
+
             # Clear all Claude sessions from memory that belong to this channel/user
             sessions_to_clear = []
             for session_key in self.controller.claude_sessions.keys():
                 # Session keys format: "base_session_id:working_path"
-                base_part = session_key.split(':')[0] if ':' in session_key else session_key
-                
+                base_part = (
+                    session_key.split(":")[0] if ":" in session_key else session_key
+                )
+
                 # Check if this session should be cleared
                 if base_part in session_bases_to_clear:
                     sessions_to_clear.append(session_key)
-            
+
             # Clear identified sessions
             for session_key in sessions_to_clear:
                 try:
                     client = self.controller.claude_sessions[session_key]
-                    if hasattr(client, 'close'):
+                    if hasattr(client, "close"):
                         await client.close()
                     del self.controller.claude_sessions[session_key]
                     logger.info(f"Cleared Claude session: {session_key}")
@@ -163,7 +165,9 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
 
             # Clear session and disconnect clients (legacy)
             legacy_response = await self.session_manager.clear_session(settings_key)
-            logger.info(f"User {context.user_id} cleared all sessions for {settings_key}")
+            logger.info(
+                f"User {context.user_id} cleared all sessions for {settings_key}"
+            )
 
             # Build response message based on what was actually cleared
             if len(sessions_to_clear) > 0:
@@ -171,7 +175,9 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             elif session_bases_to_clear:
                 full_response = f"✅ Cleared {len(session_bases_to_clear)} stored session mapping(s).\n🔄 All sessions have been reset."
             else:
-                full_response = "📋 No active sessions to clear.\n🔄 Session state has been reset."
+                full_response = (
+                    "📋 No active sessions to clear.\n🔄 Session state has been reset."
+                )
 
             # Send the complete response
             channel_context = self._get_channel_context(context)
@@ -228,7 +234,9 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
         try:
             if not args:
                 channel_context = self._get_channel_context(context)
-                await self.im_client.send_message(channel_context, "Usage: /set_cwd <path>")
+                await self.im_client.send_message(
+                    channel_context, "Usage: /set_cwd <path>"
+                )
                 return
 
             new_path = args.strip()
@@ -327,18 +335,19 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
             if not session_handler:
                 channel_context = self._get_channel_context(context)
                 await self.im_client.send_message(
-                    channel_context,
-                    "❌ Session handler not available"
+                    channel_context, "❌ Session handler not available"
                 )
                 return
 
             # Get session info for the current context
-            base_session_id, working_path, composite_key = session_handler.get_session_info(context)
-            
+            base_session_id, working_path, composite_key = (
+                session_handler.get_session_info(context)
+            )
+
             # Check if there's an active Claude session
             if composite_key not in self.controller.claude_sessions:
                 channel_context = self._get_channel_context(context)
-                
+
                 # Provide helpful guidance based on platform
                 if self.config.platform == "slack":
                     formatter = self.im_client.formatter
@@ -365,29 +374,29 @@ Use the buttons below to manage your Claude Code sessions, or simply type any me
                         "3. Claude will stop execution but keep the session active\n\n"
                         "💡 Tip: Start a conversation with Claude first, then use `/stop` if needed."
                     )
-                
+
                 await self.im_client.send_message(channel_context, help_text)
                 return
 
             # Get the Claude client for this session
             client = self.controller.claude_sessions[composite_key]
-            
+
             # Send acknowledgment - use original context to send to thread if applicable
             await self.im_client.send_message(
                 context,  # Use original context, not channel_context
-                "🛑 Sending stop signal to Claude..."
+                "🛑 Sending stop signal to Claude...",
             )
-            
+
             # Send interrupt message to Claude through the same session
             stop_message = "Please stop the current execution immediately and wait for further instructions."
             await client.query(stop_message, session_id=composite_key)
-            
+
             logger.info(f"Sent stop command to Claude session {composite_key}")
-            
+
         except Exception as e:
             logger.error(f"Error sending stop command: {e}", exc_info=True)
             # For errors, still use original context to maintain thread consistency
             await self.im_client.send_message(
                 context,  # Use original context
-                f"❌ Error sending stop command: {str(e)}"
+                f"❌ Error sending stop command: {str(e)}",
             )
