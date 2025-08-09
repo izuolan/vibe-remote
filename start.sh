@@ -65,13 +65,13 @@ cd "$SCRIPT_DIR"
 
 # Load environment variables from .env file if it exists
 if [ -f .env ]; then
-    export $(cat .env | grep -v '^#' | xargs)
+    # shellcheck disable=SC2046
+    export $(grep -v '^#' .env | xargs)
 else
     echo "ERROR: .env file not found!"
-    echo "Please create a .env file with required environment variables:"
-    echo "  TELEGRAM_BOT_TOKEN=your_bot_token"
-    echo "  TELEGRAM_TARGET_CHAT_ID=your_chat_id (optional)"
-    echo "  CLAUDE_CWD=./_tmp (optional, default: ./_tmp)"
+    echo "Please create a .env file with required environment variables."
+    echo "You can start from the template:"
+    echo "  cp .env.example .env && edit .env"
     exit 1
 fi
 

@@ -19,12 +19,20 @@ def setup_logging(level: str = "INFO"):
     # For development, you can use this more detailed format:
     # log_format = '%(asctime)s - %(name)s - %(levelname)s - [%(pathname)s:%(lineno)d] - %(funcName)s() - %(message)s'
     
+    # Ensure logs directory exists
+    logs_dir = 'logs'
+    try:
+        os.makedirs(logs_dir, exist_ok=True)
+    except Exception:
+        # Fallback to current directory if logs dir cannot be created
+        logs_dir = '.'
+
     logging.basicConfig(
         level=getattr(logging, level.upper()),
         format=log_format,
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler('claude_proxy.log')
+            logging.FileHandler(f'{logs_dir}/claude_proxy.log')
         ]
     )
 
