@@ -1,25 +1,31 @@
-<h1>
-    <img src="assets/logo.png" alt="Vibe Remote" width="40" style="vertical-align: middle; margin-right: 4px;"/> Vibe Remote
-</h1>
+<div align="center">
+
+<img src="assets/logo.png" alt="Vibe Remote" width="40"/>
+
+# Vibe Remote
+
+[快速开始](#快速开始) · [配置](#配置) · [使用方式](#使用方式) · [安装指南](#setup-guides) · [Roadmap](#roadmap)
 
 [![Python](https://img.shields.io/badge/python-3.9%2B-3776AB)](https://www.python.org/)
 [![Platforms](https://img.shields.io/badge/platforms-Slack%20%7C%20Telegram-8A2BE2)](#setup-guides)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
-[English](README.md) | 中文
+[English](README.md) | [中文](README_ZH.md)
 
 ![Banner](assets/banner.jpg)
 
-_面向 Slack/Telegram 的免干预 vibe coding 远程工作流。_
+</div>
 
-Vibe Remote 是一个面向聊天（chat‑native）的 vibe coding 控制器。你可以在 Slack/Telegram 中触发与引导编码 CLI（起步支持 Claude Code），以“意图驱动、最小 review”的方式更快交付。
+_在 Slack/Telegram 里通过聊天远程操控 AI 代理（如 Claude Code、Codex、Cursor），进行 Vibe Coding。_
+
+Vibe Remote 把 AI 写代码搬到聊天软件。你在 Slack/Telegram 输入意图与约束，它会驱动相应的 AI agent 执行并反馈；结果实时流式返回，无需本地 IDE，随时随地推进任务。
 
 ## 为什么选择 Vibe Remote
 
 - **专注 vibe coding**：基于你的意图与约束让 AI 自主推进，你只把控方向与结果。
 - **随时随地**：不被 IDE 束缚，直接在 Slack/Telegram 中远程操控编码会话。
-- **为扩展而生**：从 Claude Code 起步，后续可扩展到更多 coding agents/CLIs。
+- **为扩展而生**：目前仅支持 Claude Code，后续可扩展到更多 coding agents/CLIs。
 - **按线程 + 路径持久化**：每个 Slack 线程/Telegram 对话都维持独立 Claude 会话与工作目录，并通过持久化映射自动恢复。
 - **Slack 交互式体验**：`/start` 菜单 + Settings/CWD 模态，按钮优先于命令，更快上手。
 

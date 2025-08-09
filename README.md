@@ -1,6 +1,10 @@
-<h1>
-    <img src="assets/logo.png" alt="Vibe Remote" width="40" style="vertical-align: middle; margin-right: 4px;"/> Vibe Remote
-</h1>
+<div align="center">
+
+<img src="assets/logo.png" alt="Vibe Remote" width="40"/>
+
+# Vibe Remote
+
+[Quick Start](#quick-start) · [Configuration](#configuration) · [Usage](#usage) · [Setup Guides](#setup-guides) · [Roadmap](#roadmap)
 
 [![Python](https://img.shields.io/badge/python-3.9%2B-3776AB)](https://www.python.org/)
 [![Platforms](https://img.shields.io/badge/platforms-Slack%20%7C%20Telegram-8A2BE2)](#setup-guides)
@@ -11,9 +15,11 @@
 
 ![Banner](assets/banner.jpg)
 
-_Hands‑free remote vibe coding from Slack/Telegram._
+</div>
 
-Vibe Remote is a chat‑native controller for vibe coding. Trigger and steer coding CLIs (starting with Claude Code) from Slack/Telegram — minimal review, intent‑driven, ship faster. Built to work anywhere you work.
+_Remote vibe coding over chat — control AI coding agents (Claude Code, Codex, Cursor, etc.) from Slack/Telegram._
+
+Vibe Remote lets you operate coding agents via IM. Type in Slack or Telegram to start and steer agents; describe intent and constraints, receive streaming results, and ship without being tied to a local IDE.
 
 ## Why Vibe Remote
 
