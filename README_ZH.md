@@ -1,4 +1,4 @@
-# <img src="assets/logo.jpg" alt="Vibe Remote" width="32" style="border-radius: 6px; margin-right: 4px; vertical-align: -6px;" /> Vibe Remote
+# <img src="assets/logo.png" alt="Vibe Remote" width="40"/> Vibe Remote
 
 [![Python](https://img.shields.io/badge/python-3.9%2B-3776AB)](https://www.python.org/)
 [![Platforms](https://img.shields.io/badge/platforms-Slack%20%7C%20Telegram-8A2BE2)](#setup-guides)
