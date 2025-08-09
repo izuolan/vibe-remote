@@ -9,6 +9,8 @@
 
 [English](README.md) | [中文](README_ZH.md)
 
+![Banner](assets/banner.jpg)
+
 _Hands‑free remote vibe coding from Slack/Telegram._
 
 Vibe Remote is a chat‑native controller for vibe coding. Trigger and steer coding CLIs (starting with Claude Code) from Slack/Telegram — minimal review, intent‑driven, ship faster. Built to work anywhere you work.

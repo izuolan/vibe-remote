@@ -9,6 +9,8 @@
 
 [English](README.md) | 中文
 
+![Banner](assets/banner.jpg)
+
 _面向 Slack/Telegram 的免干预 vibe coding 远程工作流。_
 
 Vibe Remote 是一个面向聊天（chat‑native）的 vibe coding 控制器。你可以在 Slack/Telegram 中触发与引导编码 CLI（起步支持 Claude Code），以“意图驱动、最小 review”的方式更快交付。
