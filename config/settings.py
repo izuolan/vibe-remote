@@ -73,9 +73,9 @@ class ClaudeConfig:
         if not permission_mode:
             raise ValueError("CLAUDE_PERMISSION_MODE environment variable is required")
 
-        cwd = os.getenv("CLAUDE_CWD")
+        cwd = os.getenv("CLAUDE_DEFAULT_CWD")
         if not cwd:
-            raise ValueError("CLAUDE_CWD environment variable is required")
+            raise ValueError("CLAUDE_DEFAULT_CWD environment variable is required")
 
         return cls(
             permission_mode=permission_mode,

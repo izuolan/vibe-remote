@@ -5,21 +5,25 @@ A modular system for controlling Claude Code through multiple instant messaging 
 ## Quick Start
 
 1. Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 2. Create `.env` file from template:
+
 ```bash
 cp .env.example .env
 # Edit .env with your platform choice and credentials
 ```
 
 3. Choose your platform:
+
    - Set `IM_PLATFORM=telegram` for Telegram
    - Set `IM_PLATFORM=slack` for Slack
 
 4. Run the bot:
+
 ```bash
 ./start.sh
 # or
@@ -31,6 +35,7 @@ python main.py
 ### Platform Selection
 
 Set `IM_PLATFORM` in your `.env` file:
+
 - `telegram` - Use Telegram Bot
 - `slack` - Use Slack Bot
 
@@ -56,43 +61,22 @@ For detailed Slack setup instructions, see [docs/SLACK_SETUP.md](docs/SLACK_SETU
 
 ### Claude Configuration
 
-- `CLAUDE_CWD`: Working directory for Claude Code (default: `./_tmp`)
-- `CLAUDE_PERMISSION_MODE`: Permission mode (default: `bypassPermissions`)
-- `CLAUDE_CONTINUE_CONVERSATION`: Continue conversations (default: `true`)
-- `CLAUDE_SYSTEM_PROMPT`: Custom system prompt (optional)
+- `CLAUDE_DEFAULT_CWD` (required): Working directory for Claude Code (e.g. `./_tmp`)
+- `CLAUDE_PERMISSION_MODE` (required): Permission mode, e.g. `bypassPermissions`
+- `CLAUDE_SYSTEM_PROMPT` (optional): Custom system prompt
+
+Claude Code SDK credentials (set via environment, if required by your setup):
+
+- `ANTHROPIC_API_KEY` (or other keys required by `claude-code-sdk`)
 
 ### Application Configuration
 
 - `LOG_LEVEL`: Logging level (default: `INFO`)
 
-## Architecture
-
-```
-claude-code-bot/
-├── config/
-│   └── settings.py             # Configuration management
-├── modules/
-│   ├── __init__.py
-│   ├── base_im_client.py       # Abstract base class for IM platforms
-│   ├── base_im_config.py       # Base configuration class
-│   ├── telegram_bot.py         # Telegram implementation
-│   ├── slack_bot.py            # Slack implementation
-│   ├── im_factory.py           # Factory for creating IM clients
-│   ├── claude_client.py        # Claude Code SDK wrapper
-│   ├── session_manager.py      # Session and message queue management
-│   └── settings_manager.py     # User settings management
-├── core/
-│   ├── __init__.py
-│   └── controller.py           # Platform-agnostic controller
-├── docs/
-│   └── SLACK_SETUP.md          # Slack setup documentation
-├── main.py                     # Application entry point
-└── requirements.txt            # Dependencies
-```
-
 ## Features
 
 ### Core Features
+
 1. **Multi-Platform Support**: Works with Telegram and Slack
 2. **Automatic Execution**: Messages are processed automatically in order
 3. **Message Queue**: User messages are queued and executed sequentially
@@ -105,12 +89,14 @@ claude-code-bot/
 ### Platform-Specific Features
 
 #### Telegram
+
 - Direct message and group chat support
 - Inline keyboard for settings
 - Message threading via reply-to
 - Markdown formatting support
 
 #### Slack
+
 - **Thread Support**: Each conversation is organized in its own thread
 - **Socket Mode**: No need for public webhooks
 - **Channel & DM Support**: Works in both channels and direct messages
@@ -119,6 +105,7 @@ claude-code-bot/
 ## Commands
 
 All platforms support the same commands:
+
 - `/start` - Shows welcome message and IDs
 - `/status` - Display queue and execution status
 - `/clear` - Clear message queue
@@ -131,11 +118,13 @@ All platforms support the same commands:
 ## Usage
 
 ### Telegram
+
 1. Start a chat with your bot
 2. Send messages directly - they'll be queued and processed automatically
 3. Use commands with `/` prefix
 
 ### Slack
+
 1. **In Channels**: Mention the bot (`@bot-name your message`)
 2. **In DMs**: Send messages directly
 3. Commands work with `/` prefix
@@ -145,10 +134,23 @@ All platforms support the same commands:
 
 The architecture supports easy addition of new IM platforms:
 
-1. Create a new class inheriting from `BaseIMClient` 
+1. Create a new class inheriting from `BaseIMClient`
 2. Implement all abstract methods
 3. Add configuration class inheriting from `BaseIMConfig`
 4. Update `IMFactory` to support the new platform
 5. Add platform-specific environment variables
 
-See `modules/slack_bot.py` for a complete implementation example.
+See `modules/im/slack.py` for a complete implementation example.
+
+## License
+
+This project is licensed under the MIT License. See `LICENSE` for details.
+
+## Contributing
+
+Please see `CONTRIBUTING.md`. By participating you agree to the `CODE_OF_CONDUCT.md`.
+
+## Security
+
+- Do not commit secrets. Use `.env` based on `.env.example`.
+- The underlying `claude-code-sdk` may require credentials such as `ANTHROPIC_API_KEY` in your environment.

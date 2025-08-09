@@ -4,7 +4,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$SCRIPT_DIR/.bot.pid"
 
-echo "Stopping Telegram Bot..."
+echo "Stopping Claude Proxy..."
 
 if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE")

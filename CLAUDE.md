@@ -57,8 +57,8 @@ IM_PLATFORM=slack python main.py
 
 The system uses an abstract factory pattern with platform-agnostic interfaces:
 
-1. **BaseIMClient** (`modules/base_im_client.py`): Abstract base class defining the IM interface
-2. **IMFactory** (`modules/im_factory.py`): Creates appropriate platform clients
+1. **BaseIMClient** (`modules/im/base.py`): Abstract base class defining the IM interface
+2. **IMFactory** (`modules/im/factory.py`): Creates appropriate platform clients
 3. **Controller** (`core/controller.py`): Platform-agnostic business logic coordinator
 
 ### Key Components
@@ -70,8 +70,8 @@ The system uses an abstract factory pattern with platform-agnostic interfaces:
 
 ### Platform Implementations
 
-- **TelegramBot** (`modules/telegram_bot.py`): Telegram-specific implementation with inline keyboards
-- **SlackBot** (`modules/slack_bot.py`): Slack-specific implementation with thread support and Socket Mode
+- **TelegramBot** (`modules/im/telegram.py`): Telegram-specific implementation with inline keyboards
+- **SlackBot** (`modules/im/slack.py`): Slack-specific implementation with thread support and Socket Mode
 
 ### Message Flow
 
@@ -113,7 +113,7 @@ Telegram supports traditional slash commands:
 
 - `IM_PLATFORM`: Must be "telegram" or "slack"
 - Platform-specific tokens (see `.env.example`)
-- `CLAUDE_CWD`: Working directory for Claude Code execution
+- `CLAUDE_DEFAULT_CWD`: Working directory for Claude Code execution
 
 ### Platform Switching
 
@@ -128,9 +128,9 @@ To extend support to new platforms (Discord, Teams, etc.):
 3. Create platform config class inheriting from `BaseIMConfig`
 4. Add platform to `IMFactory.create_client()`
 5. Update `AppConfig.from_env()` validation
-6. Add environment variables to `.env.example`
+6. Add environment variables to `.env` template
 
-Reference `modules/slack_bot.py` for a complete implementation example.
+Reference `modules/im/slack.py` for a complete implementation example.
 
 ## Thread and Session Management
 

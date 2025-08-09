@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$SCRIPT_DIR/.bot.pid"
 LOG_DIR="$SCRIPT_DIR/logs"
 
-echo "Telegram Bot Status"
+echo "Claude Proxy Status"
 echo "==================="
 
 if [ -f "$PID_FILE" ]; then
