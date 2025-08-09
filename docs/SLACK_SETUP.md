@@ -26,9 +26,6 @@ This guide will walk you through setting up a Slack bot for the Claude Code Remo
    - `channels:history` - View messages in public channels
    - `channels:read` - View basic information about public channels
    - `chat:write` - Send messages as bot
-   - `im:history` - View direct message history
-   - `im:read` - View basic information about direct messages
-   - `im:write` - Send direct messages
    - `app_mentions:read` - View messages that mention your bot
    - `users:read` - View basic information about users
    - `commands` - Use slash commands (automatically added)
@@ -37,11 +34,6 @@ This guide will walk you through setting up a Slack bot for the Claude Code Remo
    - `groups:read` - View basic information about private channels
    - `groups:history` - View messages in private channels  
    - `groups:write` - Send messages to private channels
-
-### Multi-Party DM Support  
-   - `mpim:read` - View basic information about group DMs
-   - `mpim:history` - View messages in group DMs
-   - `mpim:write` - Send messages to group DMs
 
 ### Enhanced Features
    - `chat:write.public` - Send messages to channels without joining
@@ -57,12 +49,11 @@ This guide will walk you through setting up a Slack bot for the Claude Code Remo
 
 ### Quick Permission Checklist
 To ensure full functionality, make sure you've added:
-- ✅ All Essential Scopes (9 scopes)
+- ✅ All Essential Scopes (6 scopes)
 - ✅ All Private Channel scopes (3 scopes) 
-- ✅ All Multi-Party DM scopes (3 scopes)
 - ✅ Any Enhanced Features you want (up to 8 additional scopes)
 
-**Total recommended scopes: ~23 scopes** for full functionality without future permission issues.
+**Total recommended scopes: ~17 scopes** for full functionality.
 
 ## Step 3: Install App to Workspace
 
@@ -94,8 +85,6 @@ Socket Mode allows your bot to connect without exposing a public URL.
 ### Message Events
    - `message.channels` - Messages in public channels
    - `message.groups` - Messages in private channels
-   - `message.im` - Direct messages
-   - `message.mpim` - Messages in group DMs
    - `app_mention` - When someone mentions your bot
 
 ### Additional Events (Optional but Recommended)
@@ -115,137 +104,75 @@ Native Slack slash commands provide the best user experience with autocomplete a
 
 ### 6.1 Access Slash Commands Configuration
 
-**详细步骤**:
-1. **打开浏览器** 并导航到 [https://api.slack.com/apps](https://api.slack.com/apps)
-2. **登录你的 Slack 账户** (如果尚未登录)
-3. **找到你的 App**: 在 "Your Apps" 列表中找到之前创建的 Claude Code Bot 应用
-4. **点击应用名称** 进入应用管理界面
-5. **导航到斜杠命令**: 在左侧边栏中，找到 **"Features"** 分组，点击 **"Slash Commands"**
-6. **查看当前状态**: 你会看到标题为 "Slash Commands" 的页面，显示任何现有的命令
+1. Navigate to [https://api.slack.com/apps](https://api.slack.com/apps)
+2. Log in to your Slack account (if not already logged in)
+3. Find your Claude Code Bot app in the "Your Apps" list
+4. Click on your app name to enter the management interface
+5. In the left sidebar, find **"Features"** section and click **"Slash Commands"**
+6. You'll see the "Slash Commands" page showing any existing commands
 
-**页面说明**:
-- 如果是新应用，页面会显示 "You haven't created any slash commands yet"
-- 右上角有绿色的 **"Create New Command"** 按钮
-- 现有命令会以列表形式显示，每个命令都有编辑选项
+**Page Overview**:
+- New apps will show "You haven't created any slash commands yet"
+- Green **"Create New Command"** button is in the top right corner
+- Existing commands appear in a list with edit options
 
-### 6.2 创建命令的通用流程
+### 6.2 Create Commands
 
-**每个命令的创建步骤**:
-1. **点击 "Create New Command"** 按钮 (页面右上角的绿色按钮)
-2. **填写命令表单** (详见下方每个命令的具体配置)
-3. **点击 "Save"** 保存命令
-4. **等待确认** - Slack 会显示 "Your slash command was saved!" 的成功消息
-5. **返回命令列表** 验证命令已创建
+**Steps for each command**:
+1. Click **"Create New Command"** button
+2. Fill in the command form (see specific configurations below)
+3. Click **"Save"** to save the command
+4. Wait for confirmation - Slack will show "Your slash command was saved!" message
+5. Return to command list to verify creation
 
-**重要提醒**:
-- ⚠️ 每次只能创建一个命令，需要重复8次这个过程
-- ⚠️ 命令名称不能重复，不能包含空格
-- ⚠️ 所有字段都区分大小写
+**Important Notes**:
+- Commands must be created one at a time
+- Command names cannot be duplicated or contain spaces
+- All fields are case-sensitive
 
-### 6.3 推荐创建的命令 (逐一配置)
+### 6.3 Required Commands
 
-**配置原则**:
-- 所有命令的 **Request URL** 都留空 (我们使用 Socket Mode)
-- 所有命令都要勾选 **"Escape channels, users, and links"**
-- 按照下面的模板逐个创建，可以直接复制粘贴
-
----
-
-#### 命令 1/8: `/claude-start` 
-**📋 复制这些内容到表单**:
-```
-Command: /claude-start
-Request URL: (留空)
-Short Description: Show welcome message and help
-Usage Hint: Get started with Claude Code bot
-```
-**操作步骤**:
-1. 点击 **"Create New Command"**
-2. 在 **"Command"** 字段填入: `/claude-start`
-3. **"Request URL"** 保持空白 (不要填任何内容)
-4. 在 **"Short Description"** 字段填入: `Show welcome message and help`
-5. 在 **"Usage Hint"** 字段填入: `Get started with Claude Code bot`
-6. ✅ **勾选** "Escape channels, users, and links" 复选框
-7. 点击 **"Save"** 按钮
-8. 看到绿色成功消息后点击 **"← Back to Slash Commands"**
-
-#### 命令 2/8: `/claude-status`
-**📋 复制这些内容到表单**:
-```
-Command: /claude-status
-Request URL: (留空)
-Short Description: Show current queue status
-Usage Hint: Check queue and execution status
-```
-**重复上述步骤，将对应内容填入表单各字段**
+**Configuration Guidelines**:
+- Leave **Request URL** empty for all commands (we use Socket Mode)
+- Check **"Escape channels, users, and links"** for all commands
+- Copy and paste the configurations below
 
 ---
 
-#### 命令 3/8: `/claude-clear`
-**📋 复制这些内容到表单**:
+#### Command 1: `/start`
 ```
-Command: /claude-clear
-Request URL: (留空)
-Short Description: Clear message queue
-Usage Hint: Clear all queued messages
+Command: /start
+Request URL: (leave empty)
+Short Description: Open main menu with interactive buttons
+Usage Hint: Start Claude Code bot and show menu
 ```
+**Steps**:
+1. Click **"Create New Command"**
+2. Fill in **"Command"** field: `/start`
+3. Leave **"Request URL"** blank
+4. Fill in **"Short Description"**: `Open main menu with interactive buttons`
+5. Fill in **"Usage Hint"**: `Start Claude Code bot and show menu`
+6. ✅ Check "Escape channels, users, and links"
+7. Click **"Save"**
+8. Return to Slash Commands page
 
----
-
-#### 命令 4/8: `/claude-cwd`
-**📋 复制这些内容到表单**:
+#### Command 2: `/stop`
 ```
-Command: /claude-cwd
-Request URL: (留空)
-Short Description: Show current working directory
-Usage Hint: Display current working directory
+Command: /stop
+Request URL: (leave empty)
+Short Description: Stop Claude Code bot session
+Usage Hint: Stop the current bot session
 ```
+**Steps**:
+1. Click **"Create New Command"**
+2. Fill in **"Command"** field: `/stop`
+3. Leave **"Request URL"** blank
+4. Fill in **"Short Description"**: `Stop Claude Code bot session`
+5. Fill in **"Usage Hint"**: `Stop the current bot session`
+6. ✅ Check "Escape channels, users, and links"
+7. Click **"Save"**
 
----
-
-#### 命令 5/8: `/claude-set-cwd`
-**📋 复制这些内容到表单**:
-```
-Command: /claude-set-cwd
-Request URL: (留空)
-Short Description: Set working directory
-Usage Hint: Set working directory: /path/to/directory
-```
-
----
-
-#### 命令 6/8: `/claude-queue`
-**📋 复制这些内容到表单**:
-```
-Command: /claude-queue
-Request URL: (留空)
-Short Description: Show message queue
-Usage Hint: View messages in queue
-```
-
----
-
-#### 命令 7/8: `/claude-settings`
-**📋 复制这些内容到表单**:
-```
-Command: /claude-settings
-Request URL: (留空)
-Short Description: Configure personalization settings
-Usage Hint: Open personalization settings menu
-```
-
----
-
-#### 命令 8/8: `/claude-execute`
-**📋 复制这些内容到表单**:
-```
-Command: /claude-execute
-Request URL: (留空)
-Short Description: Process queue manually
-Usage Hint: Manually trigger queue processing
-```
-
-**🎉 完成后**: 返回 Slash Commands 主页面，你应该看到所有8个命令都已列出。
+**✅ Complete**: After creating both commands, you should see them listed on the Slash Commands page.
 
 ### 6.4 Important Configuration Notes
 
@@ -257,96 +184,32 @@ Usage Hint: Manually trigger queue processing
 
 ### 6.5 Verification
 
-After creating all commands:
+After creating both commands:
 1. Go back to the main "Slash Commands" page
-2. You should see all 8 commands listed
+2. You should see both `/start` and `/stop` commands listed
 3. Each command should show "✅ Configured" status
 
-### 6.6 快速设置检查清单
+### 6.6 Setup Checklist
 
-**逐项检查确保设置正确**:
-- [ ] 访问了 [https://api.slack.com/apps](https://api.slack.com/apps) 并选择了正确的应用
-- [ ] 导航到了 "Features" > "Slash Commands" 页面  
-- [ ] 创建了 `/claude-start` 命令
-- [ ] 创建了 `/claude-status` 命令
-- [ ] 创建了 `/claude-clear` 命令
-- [ ] 创建了 `/claude-cwd` 命令
-- [ ] 创建了 `/claude-set-cwd` 命令
-- [ ] 创建了 `/claude-queue` 命令
-- [ ] 创建了 `/claude-settings` 命令
-- [ ] 创建了 `/claude-execute` 命令
-- [ ] 所有命令的 **Request URL** 都是空白的
-- [ ] 所有命令都勾选了 **"Escape channels, users, and links"**
-- [ ] 在 Slash Commands 主页面能看到全部8个命令列出
+**Verify your configuration**:
+- [ ] Accessed [https://api.slack.com/apps](https://api.slack.com/apps) and selected your app
+- [ ] Navigated to "Features" > "Slash Commands" page
+- [ ] Created `/start` command
+- [ ] Created `/stop` command
+- [ ] All commands have empty **Request URL**
+- [ ] All commands have **"Escape channels, users, and links"** checked
+- [ ] Both commands appear on the Slash Commands page
 
-### 6.7 常见问题排查
+### 6.7 Troubleshooting Slash Commands
 
-#### ❌ 问题：命令创建后不显示自动完成
-**原因**: 应用可能需要重新安装到工作区
-**解决方案**:
-1. 前往 "OAuth & Permissions" 页面
-2. 点击 "Reinstall to Workspace"
-3. 重新授权应用
+If commands not showing in autocomplete:
+- Reinstall app to workspace via "OAuth & Permissions" page
+- Verify Socket Mode is enabled
+- Ensure bot is invited to channel: `/invite @YourBotName`
 
-#### ❌ 问题：输入 `/claude-` 没有命令提示
-**可能原因**:
-- 命令名称拼写错误 (检查是否有多余空格或字符)
-- 应用未正确安装到当前工作区
-- Socket Mode 未启用
-
-**解决步骤**:
-1. 检查命令列表，确认命令名称完全正确
-2. 确认 Socket Mode 已启用 (Step 4)
-3. 确认 bot 已添加到当前频道: `/invite @YourBotName`
-
-#### ❌ 问题："This command doesn't exist" 错误
-**原因**: 命令配置有误或未保存成功
-**解决方案**:
-1. 回到 Slash Commands 页面验证命令确实存在  
-2. 检查命令名称是否与输入完全匹配
-3. 尝试删除并重新创建该命令
-
-#### ❌ 问题：命令执行后无响应
-**原因**: Bot 应用可能未运行或连接有问题
-**解决方案**:
-1. 检查 bot 进程是否在运行
-2. 查看 bot 日志是否有错误信息
-3. 确认 `SLACK_APP_TOKEN` 和 `SLACK_BOT_TOKEN` 配置正确
-
-### 6.8 设置完成验证
-
-**测试步骤**:
-1. 在任意频道或 DM 中输入 `/claude-` 
-2. 应该看到所有8个命令的自动完成列表
-3. 选择 `/claude-start` 并发送
-4. Bot 应该响应欢迎消息
-
-**预期结果**: 
-- ✅ 命令自动完成正常工作
-- ✅ 命令执行后 bot 能正确响应
-- ✅ 在频道中使用命令会创建线程回复
-
-### 6.7 Automation Possibilities (Currently Limited)
-
-**Can Slash Commands Be Created Automatically?**
-
-Unfortunately, as of 2025, Slack does not provide an API to programmatically create slash commands. They must be created manually through the Slack App Management interface at [api.slack.com/apps](https://api.slack.com/apps).
-
-**Why No Automation?**
-- Slack considers slash commands part of the app's core configuration
-- Each command requires careful consideration of permissions and scope  
-- Manual creation ensures proper security review
-- Prevents automated spam of command namespaces
-
-**Alternative Approaches:**
-- Use the existing `/claude-*` command pattern for consistency
-- Focus on @ mention + command syntax for dynamic commands
-- Consider using Slack's Block Kit for interactive menus instead of many commands
-
-**Future Possibilities:**
-- Slack may introduce API endpoints for slash command management
-- Consider using Slack's Workflow Builder for some automation needs
-- Monitor Slack's developer blog for new automation features
+If commands execute but no response:
+- Check bot process is running
+- Verify `SLACK_APP_TOKEN` and `SLACK_BOT_TOKEN` are correctly configured
 
 ## Step 7: Configure Your Environment
 
@@ -360,7 +223,7 @@ IM_PLATFORM=slack
 SLACK_BOT_TOKEN=xoxb-your-bot-token-here
 SLACK_APP_TOKEN=xapp-your-app-token-here
 
-# Optional: Whitelist of allowed channel IDs (empty = DM only, null = all channels)
+# Optional: Whitelist of allowed channel IDs (null = all channels)
 SLACK_TARGET_CHANNEL=[C1234567890,C0987654321]
 ```
 
@@ -390,53 +253,40 @@ python main.py
 
 ### Command Methods
 
-The bot supports multiple ways to use commands:
+The bot supports multiple ways to interact:
 
-#### 1. Native Slash Commands (Recommended)
-If you configured slash commands in Step 6:
+#### 1. Slash Commands (Recommended)
 ```
-/claude-start
-/claude-status
-/claude-cwd
+/start
+/stop
 ```
 - Provides autocomplete and help text
 - Works in any channel where the bot is invited
 - Most user-friendly experience
 
-#### 2. @ Mention + Command
-Mention the bot followed by a command:
-```
-@YourBotName /start
-@YourBotName /status
-@YourBotName /cwd
-```
+#### 2. In Channels
+- Use `/start` to begin
+- The bot creates threads to organize conversations
+- All responses appear in the thread
 
-#### 3. Direct Message Commands
-In DMs with the bot, use commands directly:
-```
-/start
-/status
-/cwd
-```
+### Using the Bot
 
-### In Channels
-- Mention the bot: `@YourBotName your message here`
-- The bot will create a thread for the conversation
+#### Primary Command
+- `/start` - Opens the main menu with interactive buttons:
+  - **Current Dir** - Display current working directory
+  - **Change Work Dir** - Open modal to change working directory
+  - **Reset Session** - Clear conversation context and start fresh
+  - **Settings** - Configure message visibility preferences
+  - **How it Works** - Display help information
 
-### In Direct Messages
-- Send any message directly to the bot
-- No mention needed in DMs
+#### Additional Command
+- `/stop` - Stop the current Claude Code session
 
-### Commands
-All commands work the same as in Telegram:
-- `/start` - Show welcome message
-- `/execute` - Manually process queue
-- `/clear` - Clear message queue
-- `/status` - Show current status
-- `/queue` - Show messages in queue
-- `/cwd` - Show working directory
-- `/set_cwd <path>` - Set working directory
-- `/settings` - Configure message visibility
+#### Sending Messages to Claude
+After using `/start`, simply type your message in the channel. The bot will:
+1. Send your message to Claude Code
+2. Stream the response back in real-time
+3. Maintain conversation context for follow-ups
 
 ## Thread Support
 
@@ -482,74 +332,13 @@ If you see `cannot_reply_to_message` error:
 
 ### Slash Command Issues
 
-#### Slash commands not appearing in autocomplete
-**Symptoms:** When typing `/claude-`, no autocomplete suggestions appear
-**Solutions:**
-1. Verify slash commands were created successfully in app settings
-2. Check that the bot is installed in the workspace
-3. Try reinstalling the app to workspace
-4. Ensure you're in a channel where the bot is invited
+If slash commands not working:
+1. Verify commands created in app settings  
+2. Check Socket Mode is enabled
+3. Ensure bot is invited to channel: `/invite @YourBotName`
+4. Restart bot if needed
 
-#### "Command not found" error
-**Symptoms:** Slack shows "Sorry, `/claude-start` didn't work. You might be looking for something else?"
-**Solutions:**
-1. Double-check command spelling in Slack App settings
-2. Ensure Socket Mode is enabled and connected
-3. Verify `SLACK_APP_TOKEN` is set correctly
-4. Check bot logs for connection errors
-5. Try restarting the bot application
-
-#### Slash commands timeout
-**Symptoms:** Slack shows "Timeout: Command failed to respond"  
-**Solutions:**
-1. Check bot application is running and connected
-2. Verify Socket Mode connection is stable
-3. Look for errors in bot logs during command execution
-4. Ensure the bot responds within 3 seconds (handled automatically by our code)
-
-#### Commands work in DMs but not in channels
-**Symptoms:** Slash commands work in direct messages but fail in channels
-**Solutions:**
-1. Ensure bot is invited to the channel: `/invite @YourBotName`
-2. Check bot has necessary channel permissions
-3. Verify `channels:history` and `channels:read` scopes are added
-
-#### "This app doesn't have permission to respond" error
-**Symptoms:** Bot receives command but can't respond
-**Solutions:**
-1. Add missing OAuth scopes: `chat:write`, `im:write`
-2. Reinstall app to workspace after adding scopes
-3. Check `SLACK_BOT_TOKEN` is correctly set
-
-#### Slash commands show but execute as text
-**Symptoms:** Commands appear as regular messages instead of executing
-**Solutions:**
-1. Verify Socket Mode is enabled (not webhook mode)
-2. Check `_handle_slash_command` method is being called in logs
-3. Ensure command mapping in `slack_bot.py` is correct
-4. Restart the bot application
-
-### Debug Commands
-
-Use these methods to test if slash commands are working:
-
-#### Test in Direct Message
-1. Send a DM to the bot
-2. Try `/claude-start` 
-3. Should work without @ mention
-
-#### Test in Channel with @ Mention
-1. In a channel where bot is invited
-2. Try `@YourBotName /start`
-3. Should create a thread with response
-
-#### Check Bot Status
-1. Look for "🟢 Online" indicator next to bot name
-2. If offline, check connection and tokens
-3. Restart bot if needed
-
-#### Verify Command Registration
-Check the bot logs for these messages on startup:
+Check bot logs for startup confirmation:
 ```
 INFO - Starting Slack bot in Socket Mode...
 INFO - A new session has been established
