@@ -299,6 +299,13 @@ class SlackBot(BaseIMClient):
             if event.get("bot_id"):
                 return
 
+            # Ignore message subtypes (edited, deleted, joins, etc.)
+            # We only process plain user messages without subtype
+            event_subtype = event.get("subtype")
+            if event_subtype:
+                logger.debug(f"Ignoring Slack message with subtype: {event_subtype}")
+                return
+
             channel_id = event.get("channel")
 
             # Check if channel is authorized based on whitelist configuration
@@ -309,11 +316,20 @@ class SlackBot(BaseIMClient):
 
             # Check if this message contains a bot mention
             # If it does, skip processing as it will be handled by app_mention event
-            text = event.get("text", "")
+            text = (event.get("text") or "").strip()
             import re
 
             if re.search(r"<@[\w]+>", text):
                 logger.info(f"Skipping message event with bot mention: '{text}'")
+                return
+
+            # Ignore messages without user or without actual text
+            user_id = event.get("user")
+            if not user_id:
+                logger.debug("Ignoring Slack message without user id")
+                return
+            if not text:
+                logger.debug("Ignoring Slack message with empty text")
                 return
 
             # Check if channel is authorized based on whitelist
@@ -332,7 +348,7 @@ class SlackBot(BaseIMClient):
             thread_id = event.get("thread_ts") or event.get("ts")
 
             context = MessageContext(
-                user_id=event.get("user"),
+                user_id=user_id,
                 channel_id=channel_id,
                 thread_id=thread_id,  # Always have a thread_id
                 message_id=event.get("ts"),
