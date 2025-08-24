@@ -4,7 +4,6 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$SCRIPT_DIR/.bot.pid"
 LOG_DIR="$SCRIPT_DIR/logs"
-MAIN_PATH="$SCRIPT_DIR/main.py"
 
 echo "Claude Proxy Status"
 echo "==================="
@@ -14,9 +13,11 @@ if [ -f "$PID_FILE" ]; then
     
     # Check if the process exists
     if ps -p "$PID" > /dev/null 2>&1; then
-        # Verify it's our python process by absolute main.py path
+        # Verify it's actually our python process
         PROCESS_CMD=$(ps -p "$PID" -o command= 2>/dev/null || echo "")
-        if [[ "$PROCESS_CMD" == *"$MAIN_PATH"* ]]; then
+        PROCESS_CWD=$(lsof -p "$PID" -a -d cwd -Fn 2>/dev/null | grep '^n' | cut -c2- || echo "")
+        
+        if [[ "$PROCESS_CMD" == *"python"*"main.py"* ]] && [[ "$PROCESS_CWD" == "$SCRIPT_DIR" ]]; then
             echo "Status: RUNNING"
             echo "PID: $PID"
             

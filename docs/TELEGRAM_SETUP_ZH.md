@@ -248,11 +248,34 @@ Telegram 有速率限制：
 
 ### Webhook 模式（可选）
 
-对于生产部署，你可以使用 webhook 而不是轮询：
+对于生产部署，你可以使用 webhook 而不是轮询模式。Webhook 模式具有更好的实时性和资源效率。
 
-1. 设置 HTTPS 端点
-2. 使用 Telegram API 配置 webhook URL
-3. 更新机器人代码以处理 webhook 请求
+#### 配置 Webhook
+
+在你的 `.env` 文件中添加以下配置：
+
+```env
+# Webhook 配置
+TELEGRAM_WEBHOOK_URL=https://your-domain.com/telegram-webhook
+TELEGRAM_WEBHOOK_PORT=8443
+TELEGRAM_WEBHOOK_LISTEN=0.0.0.0
+TELEGRAM_WEBHOOK_SECRET_TOKEN=your-secret-token-here
+
+# SSL 证书配置（可选，用于自签名证书）
+TELEGRAM_WEBHOOK_CERT_PATH=/path/to/your/cert.pem
+TELEGRAM_WEBHOOK_KEY_PATH=/path/to/your/private.key
+```
+
+#### Webhook 配置参数说明
+
+| 参数 | 说明 | 必需 | 默认值 |
+|------|------|------|--------|
+| `TELEGRAM_WEBHOOK_URL` | 公开可访问的 HTTPS URL | 是 | 无 |
+| `TELEGRAM_WEBHOOK_PORT` | Webhook 服务器监听端口 | 否 | 8443 |
+| `TELEGRAM_WEBHOOK_LISTEN` | 监听地址 | 否 | 0.0.0.0 |
+| `TELEGRAM_WEBHOOK_SECRET_TOKEN` | 安全令牌，用于验证请求来源 | 推荐 | 无 |
+| `TELEGRAM_WEBHOOK_CERT_PATH` | SSL 证书文件路径 | 否 | 无 |
+| `TELEGRAM_WEBHOOK_KEY_PATH` | SSL 私钥文件路径 | 否 | 无 |
 
 ### 自定义键盘
 

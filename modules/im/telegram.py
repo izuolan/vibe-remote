@@ -215,7 +215,7 @@ class TelegramBot(BaseIMClient):
 
 
     def run(self):
-        """Run the bot with infinite retry mechanism"""
+        """Run the bot with webhook or polling mode"""
         import time
 
         self.setup_handlers()
@@ -225,8 +225,12 @@ class TelegramBot(BaseIMClient):
 
         while True:
             try:
-                logger.info(f"Starting Telegram bot (attempt {attempt})...")
-                self.application.run_polling()
+                if self.config.webhook_url:
+                    logger.info(f"Starting Telegram bot in webhook mode (attempt {attempt})...")
+                    self._run_webhook()
+                else:
+                    logger.info(f"Starting Telegram bot in polling mode (attempt {attempt})...")
+                    self.application.run_polling()
                 break  # If successful, break out of retry loop
 
             except KeyboardInterrupt:
@@ -247,6 +251,92 @@ class TelegramBot(BaseIMClient):
 
                 retry_delay = min(retry_delay * 1.5, 60)  # Exponential backoff, max 60s
                 attempt += 1
+
+    def _run_webhook(self):
+        """Run the bot in webhook mode"""
+        try:
+            # 准备 webhook 参数
+            webhook_kwargs = {
+                "listen": self.config.webhook_listen,
+                "port": self.config.webhook_port,
+                "webhook_url": self.config.webhook_url,
+            }
+            
+            # 添加可选参数
+            if self.config.webhook_secret_token:
+                webhook_kwargs["secret_token"] = self.config.webhook_secret_token
+                
+            if self.config.webhook_cert_path and self.config.webhook_key_path:
+                webhook_kwargs["cert"] = self.config.webhook_cert_path
+                webhook_kwargs["key"] = self.config.webhook_key_path
+            
+            logger.info(f"Starting webhook server on {self.config.webhook_listen}:{self.config.webhook_port}")
+            logger.info(f"Webhook URL: {self.config.webhook_url}")
+            
+            # 运行 webhook（包含自动设置）
+            self.application.run_webhook(**webhook_kwargs)
+            
+        except Exception as e:
+            logger.error(f"Failed to start webhook: {e}")
+            raise
+
+    async def setup_webhook_manually(self):
+        """Manually configure webhook with Telegram (for advanced users)"""
+        try:
+            bot = self.application.bot
+            
+            # 检查当前 webhook 状态
+            webhook_info = await bot.get_webhook_info()
+            logger.info(f"Current webhook info: {webhook_info}")
+            
+            # 如果已经是正确的 webhook URL，跳过设置
+            if webhook_info.url == self.config.webhook_url:
+                logger.info("Webhook already configured correctly")
+                return True
+            
+            # 设置 webhook 参数
+            webhook_params = {"url": self.config.webhook_url}
+            
+            if self.config.webhook_secret_token:
+                webhook_params["secret_token"] = self.config.webhook_secret_token
+                
+            if self.config.webhook_cert_path:
+                with open(self.config.webhook_cert_path, 'rb') as cert_file:
+                    webhook_params["certificate"] = cert_file.read()
+            
+            # 设置 webhook
+            result = await bot.set_webhook(**webhook_params)
+            
+            if result:
+                logger.info("Webhook configured successfully")
+                # 验证设置
+                new_webhook_info = await bot.get_webhook_info()
+                logger.info(f"New webhook info: {new_webhook_info}")
+                return True
+            else:
+                logger.error("Failed to set webhook")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error setting up webhook: {e}")
+            return False
+
+    async def delete_webhook(self):
+        """Delete webhook and switch back to polling mode"""
+        try:
+            bot = self.application.bot
+            result = await bot.delete_webhook()
+            
+            if result:
+                logger.info("Webhook deleted successfully")
+                return True
+            else:
+                logger.error("Failed to delete webhook")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error deleting webhook: {e}")
+            return False
 
     # Implementation of BaseIMClient abstract methods
 

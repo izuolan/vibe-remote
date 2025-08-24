@@ -13,6 +13,13 @@ class TelegramConfig(BaseIMConfig):
     target_chat_id: Optional[Union[List[int], str]] = (
         None  # Whitelist of chat IDs. Empty list = DM only, null/None = accept all
     )
+    # Webhook 配置
+    webhook_url: Optional[str] = None  # Webhook URL for production deployment
+    webhook_port: int = 8443  # Port for webhook server
+    webhook_listen: str = "0.0.0.0"  # Listen address for webhook
+    webhook_secret_token: Optional[str] = None  # Secret token for webhook validation
+    webhook_cert_path: Optional[str] = None  # Path to SSL certificate file
+    webhook_key_path: Optional[str] = None  # Path to SSL private key file
 
     @classmethod
     def from_env(cls) -> "TelegramConfig":
@@ -43,7 +50,24 @@ class TelegramConfig(BaseIMConfig):
                         f"Invalid TELEGRAM_TARGET_CHAT_ID format: {target_chat_id_str}"
                     )
 
-        return cls(bot_token=bot_token, target_chat_id=target_chat_id)
+        # Webhook 配置
+        webhook_url = os.getenv("TELEGRAM_WEBHOOK_URL")
+        webhook_port = int(os.getenv("TELEGRAM_WEBHOOK_PORT", "8443"))
+        webhook_listen = os.getenv("TELEGRAM_WEBHOOK_LISTEN", "0.0.0.0")
+        webhook_secret_token = os.getenv("TELEGRAM_WEBHOOK_SECRET_TOKEN")
+        webhook_cert_path = os.getenv("TELEGRAM_WEBHOOK_CERT_PATH")
+        webhook_key_path = os.getenv("TELEGRAM_WEBHOOK_KEY_PATH")
+
+        return cls(
+            bot_token=bot_token,
+            target_chat_id=target_chat_id,
+            webhook_url=webhook_url,
+            webhook_port=webhook_port,
+            webhook_listen=webhook_listen,
+            webhook_secret_token=webhook_secret_token,
+            webhook_cert_path=webhook_cert_path,
+            webhook_key_path=webhook_key_path,
+        )
 
     def validate(self) -> bool:
         """Validate Telegram configuration"""

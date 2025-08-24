@@ -254,6 +254,33 @@ For production deployments, you can use webhooks instead of polling:
 2. Configure the webhook URL with Telegram API
 3. Update your bot code to handle webhook requests
 
+#### Webhook Configuration
+
+Add the following settings to your `.env` file:
+
+```env
+# Webhook configuration
+TELEGRAM_WEBHOOK_URL=https://your-domain.com/telegram-webhook
+TELEGRAM_WEBHOOK_PORT=8443
+TELEGRAM_WEBHOOK_LISTEN=0.0.0.0
+TELEGRAM_WEBHOOK_SECRET_TOKEN=your-secret-token-here
+
+# SSL certificate configuration (optional, for self-signed certificates)
+TELEGRAM_WEBHOOK_CERT_PATH=/path/to/your/cert.pem
+TELEGRAM_WEBHOOK_KEY_PATH=/path/to/your/private.key
+```
+
+#### Webhook Configuration Parameter Description
+
+| Parameter | Description | Required | Default |
+|-----------|-------------|----------|---------|
+| `TELEGRAM_WEBHOOK_URL` | Publicly accessible HTTPS URL | Yes | None |
+| `TELEGRAM_WEBHOOK_PORT` | Webhook server listening port | No | 8443 |
+| `TELEGRAM_WEBHOOK_LISTEN` | Listening address | No | 0.0.0.0 |
+| `TELEGRAM_WEBHOOK_SECRET_TOKEN` | Security token for verifying request source | Recommended | None |
+| `TELEGRAM_WEBHOOK_CERT_PATH` | SSL certificate file path | No | None |
+| `TELEGRAM_WEBHOOK_KEY_PATH` | SSL private key file path | No | None |
+
 ### Custom Keyboards
 
 You can implement custom keyboard layouts for frequently used commands:
